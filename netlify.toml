@@ -1,0 +1,20 @@
+# Tariff Watch — Netlify config
+# Static site, no build step needed. This file means Netlify configures
+# itself correctly the moment the repo is connected — nothing to type
+# into the dashboard.
+
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/service-worker.js"
+  [headers.values]
+    # Never let a CDN/browser cache the service worker itself — otherwise
+    # visitors can get stuck on an old app version after an update.
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"

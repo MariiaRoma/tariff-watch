@@ -1,0 +1,10 @@
+{
+  "name": "tariff-watch",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Tariff Watch — Canada-US counter-tariff tracker PWA with push notifications.",
+  "dependencies": {
+    "@netlify/blobs": "^11.0.3",
+    "web-push": "^3.6.7"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Tariff Watch — Canada–US Tariff Tracker",
+  "short_name": "Tariff Watch",
+  "description": "Track HS-code tariff changes across the Canada–US trade dispute and estimate landed cost.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F3EC",
+  "theme_color": "#223349",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

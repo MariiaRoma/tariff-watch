@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tariff Watch — Canada–US counter-tariff tracker</title>
+<meta name="description" content="Track HS-code tariff changes across the Canada–US trade dispute, estimate landed cost, and search the current counter-tariff lists.">
+<meta name="theme-color" content="#223349">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tariff Watch">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="app-header">
+    <h1 class="app-header__title">Tariff Watch</h1>
+    <span class="app-header__sync" id="data-sync-line">—</span>
+    <p class="app-header__strap">HS-code alerts and landed-cost estimates for the Canada–US tariff dispute.</p>
+  </header>
+
+  <div class="alert-banner" id="alert-banner" style="display:none;">
+    <span class="alert-banner__dot" aria-hidden="true"></span>
+    <span id="alert-banner-text"></span>
+    <button id="alert-banner-dismiss" type="button">Dismiss</button>
+  </div>
+
+  <div class="install-strip" id="install-strip">
+    <span id="install-text">Install Tariff Watch for one-tap access and offline lookup.</span>
+    <button id="install-btn" type="button">Install</button>
+    <button id="install-dismiss" class="install-strip__dismiss" type="button" aria-label="Dismiss">✕</button>
+  </div>
+
+  <div class="install-strip" id="notify-strip">
+    <span id="notify-text">Get notified when a watched code changes rate.</span>
+    <button id="notify-enable-btn" type="button">Enable</button>
+    <button id="notify-dismiss" class="install-strip__dismiss" type="button" aria-label="Dismiss">✕</button>
+  </div>
+
+  <main class="app-main" id="app-main">
+
+    <!-- ============================== WATCHLIST ============================== -->
+    <section class="screen is-active" id="screen-watchlist">
+      <div class="section-head">
+        <h2>Watchlist</h2>
+        <span class="section-head__meta" id="watchlist-count"></span>
+      </div>
+      <p class="section-intro">Codes you're tracking. Tariff Watch flags anything that has moved since the rate was added, and (once installed) checks again each time you open the app.</p>
+      <div id="watchlist-list"></div>
+    </section>
+
+    <!-- ================================ SEARCH ================================ -->
+    <section class="screen" id="screen-search">
+      <div class="section-head">
+        <h2>HS search</h2>
+        <span class="section-head__meta" id="search-count"></span>
+      </div>
+      <p class="section-intro">Search a curated sample of the current counter-tariff lists by HS code, keyword, or category, and add anything relevant to your watchlist.</p>
+      <div class="search-bar">
+        <input type="search" id="search-input" placeholder="Try “steel”, “0406”, or “furniture”" autocomplete="off">
+      </div>
+      <div class="filter-row search-direction">
+        <button class="chip is-active" data-dir="all">All directions</button>
+        <button class="chip" data-dir="us_to_ca">US → CA</button>
+        <button class="chip" data-dir="ca_to_us">CA → US</button>
+      </div>
+      <div class="filter-row" id="search-categories"></div>
+      <div id="search-results"></div>
+    </section>
+
+    <!-- =============================== CALCULATOR ============================== -->
+    <section class="screen" id="screen-calculator">
+      <div class="section-head">
+        <h2>Landed cost</h2>
+      </div>
+      <p class="section-intro">Estimate duty and total landed cost for a shipment. Pull a rate in from Search, or enter one manually.</p>
+
+      <div class="calc-form">
+        <div class="field">
+          <label>Direction</label>
+          <div class="direction-toggle">
+            <button type="button" class="is-active" data-dir="us_to_ca">Importing into Canada<br>(US → CA)</button>
+            <button type="button" data-dir="ca_to_us">Importing into the US<br>(CA → US)</button>
+          </div>
+        </div>
+
+        <div class="field" id="calc-hs-field">
+          <label>Selected line (optional)</label>
+          <span class="field-hint" id="calc-hs-label">None — enter a rate manually below, or pick one from Search.</span>
+        </div>
+
+        <div class="field">
+          <label for="calc-value">Customs value</label>
+          <input type="number" id="calc-value" inputmode="decimal" placeholder="0.00" min="0" step="0.01">
+          <span class="field-hint">What you paid the seller — not including freight or insurance.</span>
+        </div>
+
+        <div class="field">
+          <label for="calc-rate">Tariff rate (%)</label>
+          <input type="number" id="calc-rate" inputmode="decimal" placeholder="0" min="0" step="0.1">
+        </div>
+
+        <div class="field">
+          <label for="calc-extra-rate">Additional surtax (%) — optional</label>
+          <input type="number" id="calc-extra-rate" inputmode="decimal" placeholder="0" min="0" step="0.1">
+          <span class="field-hint">E.g. a stacked Section 232 or forced-labour surtax that applies on top of the base rate above.</span>
+        </div>
+
+        <div class="field">
+          <label for="calc-freight">Freight</label>
+          <input type="number" id="calc-freight" inputmode="decimal" placeholder="0.00" min="0" step="0.01">
+        </div>
+
+        <div class="field">
+          <label for="calc-insurance">Insurance</label>
+          <input type="number" id="calc-insurance" inputmode="decimal" placeholder="0.00" min="0" step="0.01">
+        </div>
+
+        <div class="checkbox-row" id="calc-ocean-row" style="display:none;">
+          <input type="checkbox" id="calc-ocean">
+          <label for="calc-ocean">Ocean freight (adds Harbor Maintenance Fee)</label>
+        </div>
+
+        <p class="field-hint" id="calc-gst-note">Assumes federal GST only (5%) on value + duty — provincial sales tax and any PST/HST is not included.</p>
+      </div>
+
+      <div id="calc-result" class="calc-result"></div>
+    </section>
+
+    <!-- ================================ ABOUT ================================= -->
+    <section class="screen" id="screen-about">
+      <div class="section-head"><h2>About this data</h2></div>
+
+      <div class="notice-strip">
+        Estimates only — not customs advice. Tariff Watch is not a licensed customs broker in Canada or the United States, and nothing here is a binding classification or ruling. Confirm any real shipment against the official CBSA / CBP schedules, or with a licensed customs broker, before you price or file it.
+      </div>
+
+      <div class="prose">
+        <h3>What's in this MVP</h3>
+        <p>This build ships a curated sample of roughly 75 tariff lines, not the full official lists (874 items on the Canadian counter-tariff list; hundreds more across the three US Section 338 proclamations). It's meant to demonstrate the watchlist → alert → calculate loop, not to replace the primary sources below.</p>
+
+        <h3>US → Canada direction data</h3>
+        <p>The "US → CA" entries (Canada's counter-tariffs on US-origin goods) are copied at the HS10 level directly from the Department of Finance Canada's official published list, effective September 8, 2026.</p>
+
+        <h3>Canada → US direction data</h3>
+        <p>The "CA → US" entries (US Section 338 and Section 232 tariffs on Canadian-origin goods) are illustrative, category-level entries built from public reporting on the underlying proclamations. The White House had not published a browsable line-by-line list at the time this sample was built — treat these as a starting point for your own USITC HTS lookup, not a citable classification.</p>
+
+        <h3>Path to real alerts</h3>
+        <p>This static build simulates an alert by comparing your watchlist against a snapshot saved in your browser on your last visit — it can only catch changes between the data baked into two different builds of the app. A production version would replace the static <code>data.js</code> with a nightly sync job against the free USITC HTS API and the CBSA Customs Tariff download, diff the results, and push real notifications via the Web Push API (or a service like OneSignal) when a watched code changes.</p>
+
+        <h3>Sources</h3>
+      </div>
+      <div class="about-links">
+        <a href="https://www.canada.ca/en/department-finance/programs/international-trade-finance-policy/canadas-response-us-tariffs/complete-list-us-products-subject-to-counter-tariffs.html" target="_blank" rel="noopener">Finance Canada — complete counter-tariff list</a>
+        <a href="https://hts.usitc.gov" target="_blank" rel="noopener">USITC Harmonized Tariff Schedule</a>
+        <a href="https://www.cbsa-asfc.gc.ca/trade-commerce/tariff-tarif/menu-eng.html" target="_blank" rel="noopener">CBSA — Canada's Customs Tariff</a>
+        <a href="https://www.tariffinder.ca/en/getStarted" target="_blank" rel="noopener">Canada Tariff Finder (official, non-binding)</a>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =============================== DETAIL SHEET ============================= -->
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet__handle"></div>
+    <button id="sheet-close" class="icon-btn" style="float:right;" aria-label="Close">✕</button>
+    <h3 class="sheet__title" id="sheet-title"></h3>
+    <div class="sheet__hs" id="sheet-hs"></div>
+    <dl id="sheet-rows"></dl>
+    <p class="sheet__source-note">HS headings are indicative. Read them together with the Schedule to the relevant Customs Tariff, and confirm the exact line before you rely on it for a real shipment.</p>
+    <div class="sheet__actions">
+      <button class="btn btn--full" id="sheet-watch-btn" type="button"></button>
+      <button class="btn btn--ghost btn--full" id="sheet-calc-btn" type="button">Use in calculator</button>
+    </div>
+  </div>
+
+  <!-- ================================ TAB BAR ================================= -->
+  <nav class="tab-bar">
+    <button class="tab-bar__btn is-active" data-tab="watchlist">
+      <svg viewBox="0 0 24 24" fill="none"><path class="tab-icon-stroke" d="M4 6h16M4 12h16M4 18h10" stroke-width="2" stroke-linecap="round"/></svg>
+      Watchlist
+    </button>
+    <button class="tab-bar__btn" data-tab="search">
+      <svg viewBox="0 0 24 24" fill="none"><circle class="tab-icon-stroke" cx="11" cy="11" r="6.5" stroke-width="2"/><path class="tab-icon-stroke" d="M20 20l-4.3-4.3" stroke-width="2" stroke-linecap="round"/></svg>
+      Search
+    </button>
+    <button class="tab-bar__btn" data-tab="calculator">
+      <svg viewBox="0 0 24 24" fill="none"><rect class="tab-icon-stroke" x="5" y="3" width="14" height="18" rx="1.5" stroke-width="2"/><path class="tab-icon-stroke" d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M16 15h0" stroke-width="2" stroke-linecap="round"/></svg>
+      Calculator
+    </button>
+    <button class="tab-bar__btn" data-tab="about">
+      <svg viewBox="0 0 24 24" fill="none"><circle class="tab-icon-stroke" cx="12" cy="12" r="8.5" stroke-width="2"/><path class="tab-icon-stroke" d="M12 11v5.5" stroke-width="2" stroke-linecap="round"/><circle class="tab-icon-fill" cx="12" cy="8" r="1.1"/></svg>
+      About
+    </button>
+  </nav>
+
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
