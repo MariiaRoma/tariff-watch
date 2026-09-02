@@ -1,0 +1,72 @@
+name: Sync tariff data
+
+# Runs the Python scraper (scripts/sync_data.py) on a schedule, commits
+# any changes back to the repo (which makes Netlify auto-redeploy), and
+# — if any watched rate changed — calls the Netlify Function that sends
+# push notifications to subscribed devices.
+
+on:
+  schedule:
+    # 06:00 UTC daily. GitHub may delay scheduled runs by a few minutes
+    # under load; that's fine for this use case.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {} # lets you click "Run workflow" manually in the Actions tab
+
+permissions:
+  contents: write # needed so this workflow can commit data.js/data.json back to the repo
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run sync script
+        run: python3 scripts/sync_data.py
+
+      - name: Commit updated data if changed
+        id: commit
+        run: |
+          git config user.name "tariff-watch-sync-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet -- data.js data.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No data changes to commit."
+          else
+            git add data.js data.json
+            git commit -m "chore: sync tariff data ($(date -u +%Y-%m-%d))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send push notifications if rates changed
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
+        run: |
+          if [ -z "$NOTIFY_URL" ] || [ -z "$NOTIFY_SECRET" ]; then
+            echo "NOTIFY_URL / NOTIFY_SECRET not set as repo secrets yet — skipping notification call."
+            echo "(This is expected until you've finished the push-notification setup in README.md.)"
+            exit 0
+          fi
+          CHANGES=$(cat changes.json)
+          if [ "$CHANGES" = "[]" ]; then
+            echo "No individual rate changes recorded — nothing to notify."
+            exit 0
+          fi
+          echo "Calling notify endpoint with $(echo "$CHANGES" | jq length) change(s)..."
+          curl -sf -X POST "$NOTIFY_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Notify-Secret: $NOTIFY_SECRET" \
+            -d "{\"changes\": $CHANGES}" \
+            || echo "WARNING: notify call failed — data was still synced and committed successfully."
