@@ -19,8 +19,9 @@ export default async (req) => {
     return jsonResponse({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const providedSecret = req.headers.get("x-notify-secret");
-  if (!process.env.NOTIFY_SECRET || providedSecret !== process.env.NOTIFY_SECRET) {
+  const providedSecret = (req.headers.get("x-notify-secret") || "").trim();
+  const expectedSecret = (process.env.NOTIFY_SECRET || "").trim();
+  if (!expectedSecret || providedSecret !== expectedSecret) {
     return jsonResponse({ error: "Unauthorized" }, { status: 401 });
   }
 
