@@ -42,6 +42,7 @@ workflow; if running locally, `pip install -r scripts/requirements.txt`).
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -61,6 +62,16 @@ FINANCE_CANADA_URL = (
     "international-trade-finance-policy/canadas-response-us-tariffs/"
     "complete-list-us-products-subject-to-counter-tariffs.html"
 )
+
+# Optional relay: if CANADA_PROXY_URL and NOTIFY_SECRET are set as
+# environment variables, fetch the Finance Canada page through the
+# fetch-canada-tariffs Netlify Function instead of directly. This exists
+# because GitHub Actions' own network (Azure IP ranges) was observed
+# timing out on canada.ca entirely — including its plain homepage —
+# while other networks may not be. When unset, this script falls back
+# to fetching canada.ca directly, same as before.
+CANADA_PROXY_URL = os.environ.get("CANADA_PROXY_URL", "").strip()
+NOTIFY_SECRET_FOR_PROXY = os.environ.get("NOTIFY_SECRET", "").strip()
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -138,18 +149,31 @@ def log(msg):
     print(f"[sync] {msg}", flush=True)
 
 
-def fetch_finance_canada_table():
-    """Fetch and parse the official counter-tariff list by hand: fetch the
-    raw HTML, use BeautifulSoup to find every <table> element on the
-    page, and parse each one individually. No API, no JSON endpoint —
-    just HTML.
-
-    Returns a list of dicts with keys: hs, desc, rate. Returns None (not
-    an empty list) on any failure, so the caller can distinguish "fetched
-    zero relevant rows" from "couldn't fetch at all" and avoid wiping out
-    good data because of a transient network error.
+def _fetch_html_via_proxy():
+    """Ask the fetch-canada-tariffs Netlify Function to fetch the page
+    from its own network and hand back the raw HTML. Returns the HTML
+    text, or None if the proxy isn't configured or the call failed.
     """
-    resp = None
+    if not CANADA_PROXY_URL or not NOTIFY_SECRET_FOR_PROXY:
+        return None
+    try:
+        resp = requests.get(
+            CANADA_PROXY_URL,
+            headers={"X-Notify-Secret": NOTIFY_SECRET_FOR_PROXY},
+            timeout=40,
+        )
+        resp.raise_for_status()
+        log(f"Fetched Finance Canada page via Netlify proxy ({len(resp.text)} bytes).")
+        return resp.text
+    except Exception as e:
+        log(f"  (proxy fetch failed: {e} — falling back to a direct request)")
+        return None
+
+
+def _fetch_html_direct():
+    """Fetch the page directly from this machine's own network, with a
+    session warm-up and two attempts. Returns the HTML text, or None.
+    """
     last_error = None
     for attempt in (1, 2):
         try:
@@ -167,19 +191,36 @@ def fetch_finance_canada_table():
                 timeout=60,
             )
             candidate.raise_for_status()
-            resp = candidate  # only keep it once we know it's a real success
-            break
+            return candidate.text
         except Exception as e:
             last_error = e
-            log(f"  (attempt {attempt}/2 to fetch Finance Canada page failed: {e})")
+            log(f"  (attempt {attempt}/2 to fetch Finance Canada page directly failed: {e})")
             if attempt == 1:
                 time.sleep(5)
-    if resp is None:
-        log(f"WARNING: could not fetch Finance Canada page after 2 attempts ({last_error}). Keeping existing us_to_ca data.")
+    log(f"WARNING: could not fetch Finance Canada page after 2 direct attempts ({last_error}).")
+    return None
+
+
+def fetch_finance_canada_table():
+    """Fetch and parse the official counter-tariff list by hand: fetch the
+    raw HTML (via the Netlify proxy if configured, otherwise directly),
+    use BeautifulSoup to find every <table> element on the page, and
+    parse each one individually. No API, no JSON endpoint — just HTML.
+
+    Returns a list of dicts with keys: hs, desc, rate. Returns None (not
+    an empty list) on any failure, so the caller can distinguish "fetched
+    zero relevant rows" from "couldn't fetch at all" and avoid wiping out
+    good data because of a transient network error.
+    """
+    html = _fetch_html_via_proxy()
+    if html is None:
+        html = _fetch_html_direct()
+    if html is None:
+        log("Keeping existing us_to_ca data.")
         return None
 
     try:
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
     except Exception as e:
         log(f"WARNING: could not parse the page HTML ({e}). Keeping existing us_to_ca data.")
         return None
@@ -190,6 +231,7 @@ def fetch_finance_canada_table():
         return None
     log(f"Found {len(table_tags)} <table> element(s) on the page.")
 
+    import io as io_module
     import pandas as pd
 
     rows = []
@@ -197,9 +239,10 @@ def fetch_finance_canada_table():
 
     for table_tag in table_tags:
         try:
-            # Hand this one already-located <table> tag's HTML to pandas,
-            # rather than letting pandas re-scan the whole page itself.
-            parsed = pd.read_html(str(table_tag))
+            # Wrap in StringIO: passing a raw string directly can make
+            # pandas' lxml backend misinterpret it as a file path rather
+            # than literal markup, raising a spurious FileNotFoundError.
+            parsed = pd.read_html(io_module.StringIO(str(table_tag)))
         except Exception:
             continue  # not every <table> on the page is a data table (e.g. layout tables)
         if not parsed:
