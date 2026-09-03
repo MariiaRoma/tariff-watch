@@ -35,6 +35,9 @@ jobs:
         run: pip install -r scripts/requirements.txt
 
       - name: Run sync script
+        env:
+          CANADA_PROXY_URL: ${{ secrets.CANADA_PROXY_URL }}
+          NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
         run: python3 scripts/sync_data.py
 
       - name: Commit updated data if changed
