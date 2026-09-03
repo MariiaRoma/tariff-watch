@@ -5,8 +5,8 @@
  * layers live updates on top on every scheduled run.
  */
 
-const DATA_VERSION = "2026-09-02";
-const DATA_LAST_SYNCED = "September 2, 2026";
+const DATA_VERSION = "2026-09-03";
+const DATA_LAST_SYNCED = "September 3, 2026";
 
 const TARIFF_DATA = [
   {
@@ -908,6 +908,42 @@ const TARIFF_DATA = [
     "effectiveDate": "2025-06-04",
     "legalBasis": "Section 232 Aluminum (pre-existing, separate from Section 338)",
     "verified": false
+  },
+  {
+    "id": "usitc-9903-03-12",
+    "direction": "ca_to_us",
+    "hs": "9903.03.12",
+    "desc": "Articles the product of Canada as provided in subdivision (b)(1) of U.S. note 51 to this subchapter",
+    "category": "Cross-border (Section 338)",
+    "rate": 50.0,
+    "priorRate": null,
+    "effectiveDate": "2026-08-22",
+    "legalBasis": "USITC HTS API, Section 338 Proclamations (Ch.99 9903.03.12-.16)",
+    "verified": true
+  },
+  {
+    "id": "usitc-9903-03-13",
+    "direction": "ca_to_us",
+    "hs": "9903.03.13",
+    "desc": "Articles the product of Canada as provided in subdivision (b)(2) of U.S. note 51 to this subchapter",
+    "category": "Cross-border (Section 338)",
+    "rate": 50.0,
+    "priorRate": null,
+    "effectiveDate": "2026-08-22",
+    "legalBasis": "USITC HTS API, Section 338 Proclamations (Ch.99 9903.03.12-.16)",
+    "verified": true
+  },
+  {
+    "id": "usitc-9903-03-14",
+    "direction": "ca_to_us",
+    "hs": "9903.03.14",
+    "desc": "Articles the product of Canada as provided in subdivision (b)(3) of U.S. note 51 to this subchapter",
+    "category": "Cross-border (Section 338)",
+    "rate": 50.0,
+    "priorRate": null,
+    "effectiveDate": "2026-08-22",
+    "legalBasis": "USITC HTS API, Section 338 Proclamations (Ch.99 9903.03.12-.16)",
+    "verified": true
   }
 ];
 
