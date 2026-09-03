@@ -305,4 +305,239 @@ def fetch_usitc_chapter99():
         )
         resp.raise_for_status()
     except Exception as e:
-        log(f"WARNING: could not fetch USITC
+        log(f"WARNING: could not fetch USITC HTS API ({e}). Leaving ca_to_us data untouched.")
+        return None
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        log(f"WARNING: USITC API response wasn't valid JSON ({e}). Leaving ca_to_us data untouched.")
+        return None
+
+    if not isinstance(data, list) or not data:
+        log("WARNING: USITC API returned no rows for the Chapter 99 Canada range. Leaving ca_to_us data untouched.")
+        return None
+
+    log(f"USITC API returned {len(data)} raw row(s) for {USITC_RANGE_FROM}-{USITC_RANGE_TO}.")
+    log(f"  First row's fields, for debugging if extraction below finds nothing: {sorted(data[0].keys())}")
+
+    hs_field_candidates = ["htsno", "hts_number", "htsNumber", "number", "hts"]
+    desc_field_candidates = ["description", "desc", "briefDescription"]
+    # "addiitionalDuties" (sic) is a real, misspelled field name confirmed
+    # present in USITC's actual API response — keeping both spellings
+    # since there's no telling if/when they'll fix their own typo.
+    rate_field_candidates = [
+        "general", "special", "other",
+        "additionalDuties", "addiitionalDuties", "additional_duties",
+        "footnotes",
+    ]
+
+    def first_present(row, candidates):
+        for c in candidates:
+            if c in row and row[c]:
+                return row[c]
+        return None
+
+    rows = []
+    for row in data:
+        hs_val = first_present(row, hs_field_candidates)
+        if not hs_val or not str(hs_val).startswith("9903.03.1"):
+            continue
+        desc_val = first_present(row, desc_field_candidates) or ""
+        rate_val = None
+        for field in rate_field_candidates:
+            text = row.get(field)
+            if not text:
+                continue
+            pct_match = re.search(r"\+?\s*(\d+(?:\.\d+)?)\s*%", str(text))
+            if pct_match:
+                rate_val = float(pct_match.group(1))
+                break
+        if rate_val is not None:
+            rows.append({"hs": str(hs_val), "desc": str(desc_val)[:250], "rate": rate_val})
+            log(f"  matched {hs_val} -> {rate_val}%")
+        else:
+            log(f"  skipped {hs_val} (no percentage found in any candidate field — likely a 0% carve-out heading)")
+
+    log(f"Extracted {len(rows)} usable Chapter 99 row(s) after field-matching.")
+    return rows if rows else None
+
+
+def merge_ca_to_us_from_usitc(existing_items, usitc_rows):
+    """Additive-only, like merge_us_to_ca's new-row path: adds an entry
+    for every USITC Chapter 99 row not already present (matched by HS
+    code), never touches the hand-curated illustrative ca_to_us entries
+    that were already there.
+    """
+    if not usitc_rows:
+        return existing_items, []
+
+    existing_hs = {i["hs"] for i in existing_items if i["direction"] == "ca_to_us"}
+    changes = []
+    added = 0
+    updated = list(existing_items)
+
+    for row in usitc_rows:
+        if row["hs"] in existing_hs:
+            continue
+        updated.append(
+            {
+                "id": "usitc-" + row["hs"].replace(".", "-"),
+                "direction": "ca_to_us",
+                "hs": row["hs"],
+                "desc": row["desc"] or "(description not captured — see USITC HTS)",
+                "category": "Cross-border (Section 338)",
+                "rate": row["rate"],
+                "priorRate": None,
+                "effectiveDate": "2026-08-22",
+                "legalBasis": "USITC HTS API, Section 338 Proclamations (Ch.99 9903.03.12-.16)",
+                "verified": True,
+            }
+        )
+        added += 1
+
+    if added:
+        log(f"Added {added} new ca_to_us entr{'y' if added == 1 else 'ies'} from the USITC API.")
+
+    return updated, changes
+
+
+def load_seed():
+    """data.json is both the hand-edited seed AND the sync script's own
+    output — each run reads it, updates what it can verify, and writes
+    it back. There's no separate seed file to keep in sync.
+    """
+    with open(DATA_JSON) as f:
+        return json.load(f)
+
+
+def merge_us_to_ca(existing_items, scraped_rows):
+    """Update rate/priorRate on existing us_to_ca entries that match a
+    scraped HS code, and ADD a new entry for every scraped HS code we
+    don't already have — this is what actually grows the dataset beyond
+    the original curated sample toward the full official list. Never
+    removes a curated row just because it didn't appear in this
+    particular scrape (a parsing miss shouldn't silently delete data).
+    """
+    if scraped_rows is None:
+        return existing_items, []
+
+    scraped_by_hs = {r["hs"]: r for r in scraped_rows}
+    changes = []
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    updated = []
+    seen_hs = set()
+    for item in existing_items:
+        if item["direction"] != "us_to_ca":
+            updated.append(item)
+            continue
+        seen_hs.add(item["hs"])
+        match = scraped_by_hs.get(item["hs"])
+        if match is None:
+            updated.append(item)
+            continue
+        new_rate = match["rate"]
+        if new_rate != item["rate"]:
+            changes.append(
+                {
+                    "id": item["id"],
+                    "hs": item["hs"],
+                    "desc": item["desc"],
+                    "oldRate": item["rate"],
+                    "newRate": new_rate,
+                }
+            )
+            item = {
+                **item,
+                "priorRate": item["rate"],
+                "rate": new_rate,
+                "changeDate": today,
+            }
+        updated.append(item)
+
+    added = 0
+    for hs_val, row in scraped_by_hs.items():
+        if hs_val in seen_hs:
+            continue
+        new_id = "ca-" + hs_val.replace(".", "-")
+        updated.append(
+            {
+                "id": new_id,
+                "direction": "us_to_ca",
+                "hs": hs_val,
+                "desc": row["desc"] or "(description not captured — see official list)",
+                "category": category_for_hs(hs_val),
+                "rate": row["rate"],
+                "priorRate": None,
+                "effectiveDate": "2026-09-08",
+                "legalBasis": "Counter-tariff list (Finance Canada) — added by live sync",
+                "verified": True,
+            }
+        )
+        added += 1
+
+    if added:
+        log(f"Added {added} new us_to_ca entr{'y' if added == 1 else 'ies'} not previously in the dataset.")
+
+    return updated, changes
+
+
+def write_data_js(items):
+    version = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    synced_human = datetime.now(timezone.utc).strftime("%B %-d, %Y")
+    categories = sorted({i["category"] for i in items})
+
+    js = []
+    js.append("/**\n * Tariff Watch — dataset (AUTO-GENERATED)\n")
+    js.append(" * Generated by scripts/sync_data.py — do not hand-edit this file.\n")
+    js.append(" * Edit data.json by hand for one-off fixes; the sync workflow\n")
+    js.append(" * layers live updates on top on every scheduled run.\n */\n\n")
+    js.append(f'const DATA_VERSION = "{version}";\n')
+    js.append(f'const DATA_LAST_SYNCED = "{synced_human}";\n\n')
+    js.append("const TARIFF_DATA = ")
+    js.append(json.dumps(items, indent=2))
+    js.append(";\n\n")
+    js.append("const ALL_CATEGORIES = [...new Set(TARIFF_DATA.map(d => d.category))].sort();\n")
+
+    DATA_JS.write_text("".join(js))
+    DATA_JSON.write_text(
+        json.dumps({"dataVersion": version, "dataLastSynced": synced_human, "items": items}, indent=2)
+    )
+    log(f"Wrote {DATA_JS.name} and {DATA_JSON.name} ({len(items)} items, version {version}).")
+
+
+def main():
+    seed = load_seed()
+    items = seed["items"]
+
+    try:
+        log("Fetching live Finance Canada counter-tariff list...")
+        scraped_rows = fetch_finance_canada_table()
+        items, changes = merge_us_to_ca(items, scraped_rows)
+    except Exception as e:
+        log(f"ERROR during Finance Canada fetch/parse/merge ({e}). Falling back to unchanged data for this side.")
+        changes = []
+
+    try:
+        log("Cross-checking USITC HTS API for Section 338 Canada headings...")
+        usitc_rows = fetch_usitc_chapter99()
+        items, usitc_changes = merge_ca_to_us_from_usitc(items, usitc_rows)
+        changes += usitc_changes
+    except Exception as e:
+        log(f"ERROR during USITC fetch/parse/merge ({e}). Falling back to unchanged data for this side.")
+
+    if changes:
+        log(f"Detected {len(changes)} rate change(s):")
+        for c in changes:
+            log(f"  {c['hs']}: {c['oldRate']}% -> {c['newRate']}%")
+    else:
+        log("No rate changes detected this run.")
+
+    write_data_js(items)
+    CHANGES_JSON.write_text(json.dumps(changes, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
