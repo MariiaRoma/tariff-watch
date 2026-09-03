@@ -15,6 +15,10 @@ on:
 permissions:
   contents: write # needed so this workflow can commit data.js/data.json back to the repo
 
+concurrency:
+  group: tariff-sync
+  cancel-in-progress: false # let a queued run wait its turn instead of racing an in-progress one
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -44,6 +48,10 @@ jobs:
           else
             git add data.js data.json
             git commit -m "chore: sync tariff data ($(date -u +%Y-%m-%d))"
+            # Someone (or another run) may have pushed to main since this
+            # job's checkout — rebase onto the latest before pushing so a
+            # stale local branch doesn't get a plain push rejected.
+            git pull --rebase origin main
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
