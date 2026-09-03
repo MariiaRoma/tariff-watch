@@ -23,8 +23,9 @@ export default async (req) => {
     });
   }
 
-  const providedSecret = req.headers.get("x-notify-secret");
-  if (!process.env.NOTIFY_SECRET || providedSecret !== process.env.NOTIFY_SECRET) {
+  const providedSecret = (req.headers.get("x-notify-secret") || "").trim();
+  const expectedSecret = (process.env.NOTIFY_SECRET || "").trim();
+  if (!expectedSecret || providedSecret !== expectedSecret) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
