@@ -26,10 +26,27 @@ export default async (req) => {
   const providedSecret = (req.headers.get("x-notify-secret") || "").trim();
   const expectedSecret = (process.env.NOTIFY_SECRET || "").trim();
   if (!expectedSecret || providedSecret !== expectedSecret) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    // TEMPORARY diagnostics: reveals only length + first/last 4 chars of
+    // each value (never the full secret) so we can pinpoint a mismatch
+    // without exposing anything meaningfully sensitive. Remove once the
+    // 401 is resolved.
+    const preview = (s) => (s.length > 8 ? `${s.slice(0, 4)}...${s.slice(-4)}` : s ? "(short value)" : "(empty)");
+    return new Response(
+      JSON.stringify({
+        error: "Unauthorized",
+        debug: {
+          netlifyEnvVarIsSet: Boolean(process.env.NOTIFY_SECRET),
+          expectedLength: expectedSecret.length,
+          providedLength: providedSecret.length,
+          expectedPreview: preview(expectedSecret),
+          providedPreview: preview(providedSecret),
+        },
+      }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const targetUrl =
