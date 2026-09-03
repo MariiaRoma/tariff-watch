@@ -44,6 +44,7 @@ workflow; if running locally, `pip install -r scripts/requirements.txt`).
 import json
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -141,13 +142,21 @@ def fetch_finance_canada_table():
     zero relevant rows" from "couldn't fetch at all" and avoid wiping out
     good data because of a transient network error.
     """
-    try:
-        resp = requests.get(
-            FINANCE_CANADA_URL, headers=REQUEST_HEADERS, timeout=30
-        )
-        resp.raise_for_status()
-    except Exception as e:
-        log(f"WARNING: could not fetch Finance Canada page ({e}). Keeping existing us_to_ca data.")
+    resp = None
+    last_error = None
+    for attempt in (1, 2):
+        try:
+            candidate = requests.get(FINANCE_CANADA_URL, headers=REQUEST_HEADERS, timeout=60)
+            candidate.raise_for_status()
+            resp = candidate  # only keep it once we know it's a real success
+            break
+        except Exception as e:
+            last_error = e
+            log(f"  (attempt {attempt}/2 to fetch Finance Canada page failed: {e})")
+            if attempt == 1:
+                time.sleep(5)
+    if resp is None:
+        log(f"WARNING: could not fetch Finance Canada page after 2 attempts ({last_error}). Keeping existing us_to_ca data.")
         return None
 
     try:
@@ -250,7 +259,14 @@ def fetch_usitc_chapter99():
 
     hs_field_candidates = ["htsno", "hts_number", "htsNumber", "number", "hts"]
     desc_field_candidates = ["description", "desc", "briefDescription"]
-    rate_field_candidates = ["general", "special", "other", "additional_duties", "additionalDuties", "footnotes"]
+    # "addiitionalDuties" (sic) is a real, misspelled field name confirmed
+    # present in USITC's actual API response — keeping both spellings
+    # since there's no telling if/when they'll fix their own typo.
+    rate_field_candidates = [
+        "general", "special", "other",
+        "additionalDuties", "addiitionalDuties", "additional_duties",
+        "footnotes",
+    ]
 
     def first_present(row, candidates):
         for c in candidates:
@@ -275,6 +291,9 @@ def fetch_usitc_chapter99():
                 break
         if rate_val is not None:
             rows.append({"hs": str(hs_val), "desc": str(desc_val)[:250], "rate": rate_val})
+            log(f"  matched {hs_val} -> {rate_val}%")
+        else:
+            log(f"  skipped {hs_val} (no percentage found in any candidate field — likely a 0% carve-out heading)")
 
     log(f"Extracted {len(rows)} usable Chapter 99 row(s) after field-matching.")
     return rows if rows else None
