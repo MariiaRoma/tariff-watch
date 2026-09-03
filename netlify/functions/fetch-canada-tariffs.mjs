@@ -61,9 +61,10 @@ export default async (req) => {
         "Accept-Language": "en-CA,en;q=0.9",
       },
       // Netlify Functions have their own platform-level execution time
-      // limit; this AbortSignal just makes sure we fail fast and
-      // predictably rather than hanging past that limit uninformatively.
-      signal: AbortSignal.timeout(25000),
+      // limit (60s for synchronous functions per Netlify's docs); this
+      // AbortSignal fails a bit before that so we get a clean error
+      // instead of the platform killing the function uninformatively.
+      signal: AbortSignal.timeout(45000),
     });
 
     if (!upstream.ok) {
