@@ -60,34 +60,58 @@ This is the part that can't be skipped or automated — Netlify and GitHub
 each need a couple of secret values that only you can enter, because
 they're not safe to commit to a public repo.
 
-### A real VAPID key pair has already been generated for you
+**Never paste real secret values into this file, any other committed
+file, or a chat message that could end up copy-pasted into the repo.**
+Netlify's own secret scanner will (correctly) block a deploy if it finds
+a configured secret's value sitting in your repo — treat that as a
+signal to rotate the value, not just delete the line. Secrets belong
+only in Netlify's Environment Variables screen and GitHub's Actions
+secrets screen, entered directly, never via a file.
+
+### Generate a VAPID key pair
 
 VAPID keys are how a push service verifies which server is allowed to
-send notifications to a given subscription. **Use these real,
-already-generated keys** — don't regenerate them unless you have a
-reason to (regenerating invalidates every existing subscription):
+send notifications to a given subscription. Generate your own pair —
+don't reuse an example pair from anywhere, and don't commit either half
+to the repo:
 
-```
-VAPID_PUBLIC_KEY  = BO9z5gD_cw7KvLftef79Mq9RhSBDQ6OuZM_-ZZ6EduhV732nc5W-_hILjk8Sy1fufeIduX2UvSLF7mobC7cxc_M
-VAPID_PRIVATE_KEY = qHUcHXz3WWCLO9QLA1PvfFA2cFDEI4IqV25cKJ1Hu8E
+```bash
+npx web-push generate-vapid-keys
 ```
 
-The **public** key is already baked into `app.js` (it's meant to be
-public — it's how the browser identifies your server, not a secret).
-The **private** key must go ONLY into Netlify's environment variables
-below — never into any file you commit.
+This prints a `Public Key` and a `Private Key`. The **public** key is
+meant to be public — it's already referenced as `VAPID_PUBLIC_KEY` in
+`app.js` as a placeholder you'll replace with your own. The **private**
+key must go ONLY into Netlify's environment variables below — never
+into any file you commit, including this README.
+
+### Generate a shared notify secret
+
+This is an arbitrary random string GitHub Actions and Netlify Functions
+use to authenticate calls to each other. Generate one yourself, e.g.:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
 
 ### Step 1 — Add environment variables in Netlify
 
 Netlify dashboard → your site → **Project configuration → Environment
-variables** → add each of these:
+variables** → add each of these (paste the values you just generated —
+don't write them down anywhere else):
 
 | Key | Value |
 |---|---|
-| `VAPID_PUBLIC_KEY` | `BO9z5gD_cw7KvLftef79Mq9RhSBDQ6OuZM_-ZZ6EduhV732nc5W-_hILjk8Sy1fufeIduX2UvSLF7mobC7cxc_M` |
-| `VAPID_PRIVATE_KEY` | `qHUcHXz3WWCLO9QLA1PvfFA2cFDEI4IqV25cKJ1Hu8E` |
+| `VAPID_PUBLIC_KEY` | the public key you generated above |
+| `VAPID_PRIVATE_KEY` | the private key you generated above |
 | `VAPID_SUBJECT` | `mailto:` + your real email address (push services sometimes contact this if something's wrong) |
-| `NOTIFY_SECRET` | `f69f6f0eaf65edf0bf8beb591cd9d075209515ad0d54b1e9cb130281fab1f027` (a random value already generated for you — or make your own) |
+| `NOTIFY_SECRET` | the random string you generated above |
+
+**Important:** if the variable is marked "Contains secret values" and
+"Same value for all deploy contexts" isn't available, fill in the
+**Production** field (and ideally **Deploy Previews** too) individually
+— an empty Production value means Functions see nothing at runtime,
+even though the variable looks configured in the dashboard.
 
 After saving, trigger a new deploy (Netlify → **Deploys → Trigger
 deploy → Deploy site**) so the Functions pick up the new variables —
@@ -111,12 +135,12 @@ repository secret** → add:
 2. From any computer with `curl`, send a fake change for the exact HS
    code you just watched (replace the placeholders):
 
-   ```bash
+```bash
    curl -X POST https://YOUR-SITE-NAME.netlify.app/.netlify/functions/notify \
      -H "Content-Type: application/json" \
      -H "X-Notify-Secret: YOUR_NOTIFY_SECRET" \
      -d '{"changes":[{"id":"ca-0402-10-20","hs":"0402.10.20","desc":"test","oldRate":25,"newRate":50}]}'
-   ```
+```
 
    (Swap `"id"` for whichever HS entry's id you actually watched — you
    can find ids by viewing `data.json` in your repo.)
@@ -140,10 +164,8 @@ access, so the real test is the first run there.
 
 After you trigger the workflow manually (Step 3.4 above), open its log
 and look for a line like:
-
-```
 [sync] Parsed 68 candidate rows out of 4 table(s).
-```
+
 
 If that number is 0, the page's HTML structure has likely changed since
 this was written, and the table-detection heuristic in
@@ -159,35 +181,33 @@ any API, per your instruction to keep this to Python parsing only.
 
 ## Project layout
 
-```
-index.html                    App shell: header, 4 screens, sheet, tab bar
-styles.css                     Design tokens + component styles
-app.js                         State, rendering, calculator, watchlist,
-                                push-notification subscribe/unsubscribe flow
-data.js / data.json             The dataset — data.json is the source of
-                                truth, data.js is the browser-ready copy;
-                                both are regenerated by the sync script
-manifest.webmanifest            PWA metadata
-service-worker.js               Offline cache + push/notificationclick handlers
-icons/                          App icons
+index.html App shell: header, 4 screens, sheet, tab bar
+styles.css Design tokens + component styles
+app.js State, rendering, calculator, watchlist,
+push-notification subscribe/unsubscribe flow
+data.js / data.json The dataset — data.json is the source of
+truth, data.js is the browser-ready copy;
+both are regenerated by the sync script
+manifest.webmanifest PWA metadata
+service-worker.js Offline cache + push/notificationclick handlers
+icons/ App icons
 
 scripts/
-  sync_data.py                 Fetches + parses the Finance Canada page,
-                                regenerates data.js/data.json/changes.json
-  requirements.txt              Python deps for the sync script
+sync_data.py Fetches + parses the Finance Canada page,
+regenerates data.js/data.json/changes.json
+requirements.txt Python deps for the sync script
 
 .github/workflows/
-  sync-tariffs.yml              Daily scheduled sync + notify trigger
+sync-tariffs.yml Daily scheduled sync + notify trigger
 
 netlify/functions/
-  _shared.mjs                  Shared helpers (subscription key hashing)
-  subscribe.mjs                 Store/update a push subscription + watchlist
-  unsubscribe.mjs                Remove a push subscription
-  notify.mjs                    Send Web Push to subscribers of changed codes
+_shared.mjs Shared helpers (subscription key hashing)
+subscribe.mjs Store/update a push subscription + watchlist
+unsubscribe.mjs Remove a push subscription
+notify.mjs Send Web Push to subscribers of changed codes
 
-package.json                   Declares @netlify/blobs + web-push for Functions
-netlify.toml                    Netlify build config + cache headers
-```
+package.json Declares @netlify/blobs + web-push for Functions
+netlify.toml Netlify build config + cache headers
 
 ## About the data — read before you rely on this for a real shipment
 
