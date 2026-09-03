@@ -160,7 +160,7 @@ def _fetch_html_via_proxy():
         resp = requests.get(
             CANADA_PROXY_URL,
             headers={"X-Notify-Secret": NOTIFY_SECRET_FOR_PROXY},
-            timeout=40,
+            timeout=55,
         )
         if not resp.ok:
             log(f"  (proxy fetch failed: HTTP {resp.status_code} — body: {resp.text[:500]})")
