@@ -68,8 +68,15 @@ USER_AGENT = (
 )
 REQUEST_HEADERS = {
     "User-Agent": USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-CA,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
 }
 
 # USITC HTS REST API — used ONLY to cross-check the specific, publicly
@@ -146,7 +153,19 @@ def fetch_finance_canada_table():
     last_error = None
     for attempt in (1, 2):
         try:
-            candidate = requests.get(FINANCE_CANADA_URL, headers=REQUEST_HEADERS, timeout=60)
+            session = requests.Session()
+            session.headers.update(REQUEST_HEADERS)
+            # Warm up like a real visitor would: land on the homepage first
+            # (gets real cookies set), then navigate to the target page
+            # with a same-site Referer, rather than a single cold direct
+            # hit — some government WAFs treat a referrer-less deep-link
+            # from a fresh connection as bot-like and throttle it.
+            session.get("https://www.canada.ca/en.html", timeout=30)
+            candidate = session.get(
+                FINANCE_CANADA_URL,
+                headers={"Referer": "https://www.canada.ca/en.html"},
+                timeout=60,
+            )
             candidate.raise_for_status()
             resp = candidate  # only keep it once we know it's a real success
             break
