@@ -22,6 +22,13 @@
   const SUBSCRIBE_ENDPOINT = "/.netlify/functions/subscribe";
   const UNSUBSCRIBE_ENDPOINT = "/.netlify/functions/unsubscribe";
 
+  // Supabase project config — the publishable key is safe to expose
+  // client-side by design (same trust model as VAPID_PUBLIC_KEY above),
+  // as long as Row Level Security policies are in place on every table.
+  const SUPABASE_URL = "https://llhsbpvmvbaxrwrhsdwy.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_HuYXhX8a-U4_mGuwEM0Rfw_b_bNxOi8";
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
   function loadJSON(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -492,6 +499,56 @@
   // ------------------------------------------------------------------
   // Wire up events
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Account (Supabase magic-link auth)
+  // ------------------------------------------------------------------
+  function renderAccountScreen(session) {
+    const signedOut = document.getElementById("account-signed-out");
+    const signedIn = document.getElementById("account-signed-in");
+    if (session && session.user) {
+      signedOut.style.display = "none";
+      signedIn.style.display = "block";
+      document.getElementById("account-email-display").textContent = session.user.email;
+    } else {
+      signedOut.style.display = "block";
+      signedIn.style.display = "none";
+    }
+  }
+
+  async function sendMagicLink(email) {
+    const statusEl = document.getElementById("account-status");
+    statusEl.textContent = "Sending...";
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    statusEl.textContent = error
+      ? `Error: ${error.message}`
+      : "Check your email for a sign-in link.";
+  }
+
+  async function signOutAccount() {
+    await supabaseClient.auth.signOut();
+  }
+
+  function initAccount() {
+    document.getElementById("account-send-link").addEventListener("click", () => {
+      const email = document.getElementById("account-email").value.trim();
+      if (email) sendMagicLink(email);
+    });
+    document.getElementById("account-sign-out").addEventListener("click", signOutAccount);
+
+    // Fires on sign-in, sign-out, and token refresh — including right
+    // after the person clicks the magic link and lands back here.
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      renderAccountScreen(session);
+    });
+    // Initial paint, in case a session already exists in this browser.
+    supabaseClient.auth.getSession().then(({ data }) => {
+      renderAccountScreen(data.session);
+    });
+  }
+
   function init() {
     // header sync line
     document.getElementById("data-sync-line").textContent = `Sample data as of ${DATA_LAST_SYNCED}`;
@@ -505,6 +562,8 @@
     document.querySelectorAll(".tab-bar__btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
     });
+
+    initAccount();
 
     // Delegate ledger row / action clicks (watchlist + search screens)
     document.body.addEventListener("click", (e) => {

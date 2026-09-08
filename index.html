@@ -172,6 +172,31 @@
       </div>
     </section>
 
+    <!-- =============================== ACCOUNT ================================= -->
+    <section class="screen" id="screen-account">
+      <div class="section-head">
+        <h2>Account</h2>
+      </div>
+
+      <div id="account-signed-out">
+        <p class="section-intro">Sign in to save your watchlist across devices and unlock premium reports.</p>
+        <div class="calc-form">
+          <div class="field">
+            <label for="account-email">Email</label>
+            <input type="email" id="account-email" inputmode="email" placeholder="you@example.com" autocomplete="email">
+            <span class="field-hint">We'll email you a one-time sign-in link — no password needed.</span>
+          </div>
+          <button class="btn btn--full" id="account-send-link" type="button">Send magic link</button>
+        </div>
+        <p class="field-hint" id="account-status"></p>
+      </div>
+
+      <div id="account-signed-in" style="display:none;">
+        <p class="section-intro">Signed in as <strong id="account-email-display"></strong></p>
+        <button class="btn btn--ghost btn--full" id="account-sign-out" type="button">Sign out</button>
+      </div>
+    </section>
+
   </main>
 
   <!-- =============================== DETAIL SHEET ============================= -->
@@ -207,10 +232,15 @@
       <svg viewBox="0 0 24 24" fill="none"><circle class="tab-icon-stroke" cx="12" cy="12" r="8.5" stroke-width="2"/><path class="tab-icon-stroke" d="M12 11v5.5" stroke-width="2" stroke-linecap="round"/><circle class="tab-icon-fill" cx="12" cy="8" r="1.1"/></svg>
       About
     </button>
+    <button class="tab-bar__btn" data-tab="account">
+      <svg viewBox="0 0 24 24" fill="none"><circle class="tab-icon-stroke" cx="12" cy="8" r="3.2" stroke-width="2"/><path class="tab-icon-stroke" d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6" stroke-width="2" stroke-linecap="round"/></svg>
+      Account
+    </button>
   </nav>
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 </body>
