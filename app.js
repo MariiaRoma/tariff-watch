@@ -18,7 +18,7 @@
   // Public VAPID key for Web Push (safe to expose client-side by design —
   // it's the "who is this server" half of the key pair, not the secret).
   const VAPID_PUBLIC_KEY =
-    "BO9z5gD_cw7KvLftef79Mq9RhSBDQ6OuZM_-ZZ6EduhV732nc5W-_hILjk8Sy1fufeIduX2UvSLF7mobC7cxc_M";
+    "BAx2BUnQPY9KZSv3K7547El7sRSMbM35CmF9dOBLqnP7rkJaN8MGInmghRcYh769dYOyidChPo1IbHuWLcJzfhk";
   const SUBSCRIBE_ENDPOINT = "/.netlify/functions/subscribe";
   const UNSUBSCRIBE_ENDPOINT = "/.netlify/functions/unsubscribe";
 
