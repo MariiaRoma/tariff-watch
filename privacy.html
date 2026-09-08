@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — Tariff Watch</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         max-width: 680px; margin: 0 auto; padding: 32px 20px; line-height: 1.6; color: #1a1a1a; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  .updated { color: #666; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 19px; margin-top: 32px; }
+  a { color: #0066cc; }
+  .contact { background: #f5f5f5; padding: 16px; border-radius: 8px; margin-top: 32px; }
+</style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<p class="updated">Last updated: September 8, 2026</p>
+
+<p>
+Tariff Watch ("the app", "we") is a PWA app that tracks tariff rate changes
+between Canada and the US. This page describes what data we collect and how
+we use it.
+</p>
+
+<h2>What data we collect</h2>
+<p>At this stage, the app collects a minimal amount of data:</p>
+<ul>
+  <li><strong>Push subscription</strong> — if you enable notifications, your
+  browser creates a technical "endpoint" (an address for delivering push
+  messages) and encryption keys. We store these so we can send you
+  notifications about rate changes for the HS codes on your watchlist.</li>
+  <li><strong>Watchlist (list of HS codes)</strong> — the codes you add to
+  track are stored locally in your browser (localStorage). If you enable
+  push notifications, a copy of this list is also sent to our server along
+  with your subscription's technical details — this is needed so we know
+  which codes to notify you about.</li>
+  <li><strong>Technical logs</strong> — standard serverless function logs
+  (Netlify Functions) may temporarily contain the request's IP address as
+  part of normal hosting operation.</li>
+</ul>
+
+<p>
+We <strong>do not collect</strong> names, mailing addresses, payment
+information, or any other personal data at this stage — the app does not
+have an account system.
+<!-- TODO: remove/update this paragraph once auth and Stripe are
+     implemented — then add separate sections about email, payment data
+     via Stripe (we don't store payment data ourselves, Stripe handles it) -->
+</p>
+
+<h2>How we use data</h2>
+<p>
+The sole purpose of the data we collect is to deliver push notifications
+about tariff rate changes for the codes you track. We do not sell, rent, or
+share your data with third parties for marketing purposes.
+</p>
+
+<h2>Analytics and third-party services</h2>
+<p>
+At this stage, the app does not use any third-party analytics services or
+advertising trackers.
+<!-- TODO: update this section if you add Google Analytics, Stripe,
+     Supabase, etc. — each new third-party service needs its own line here -->
+</p>
+
+<h2>Data retention and deletion</h2>
+<p>
+You can delete your push subscription at any time by turning off
+notifications in the app or in your browser settings. This removes the
+corresponding record from our server.
+</p>
+<p>
+To request full deletion of all data associated with your device, contact
+us (details below).
+</p>
+
+<h2>Jurisdiction</h2>
+<p>
+The app is developed and based in the province of Manitoba, Canada
+(business registration is currently in progress), and processes user data
+in both Canada and the US. We aim to follow the principles of the federal
+Personal Information Protection and Electronic Documents Act (PIPEDA)
+regarding data minimization and transparency of use — Manitoba does not
+have a separate provincial private-sector privacy law, so PIPEDA is the
+primary applicable law.
+<!-- TODO: if paying users from other jurisdictions appear (e.g. the EU),
+     this section will need to be expanded (GDPR) — consult a lawyer -->
+</p>
+
+<h2>Changes to this policy</h2>
+<p>
+We may update this policy as the app evolves. The date of the most recent
+update is shown at the top of this page.
+</p>
+
+<div class="contact">
+  <strong>Privacy questions:</strong><br>
+  <a href="mailto:romanchenko.marie@gmail.com">romanchenko.marie@gmail.com</a>
+</div>
+
+</body>
+</html>
