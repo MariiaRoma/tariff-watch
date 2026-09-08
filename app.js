@@ -375,6 +375,8 @@
       }
       await postSubscription(sub);
       saveJSON(LS_PUSH_ENABLED, true);
+      const { data } = await supabaseClient.auth.getSession();
+      if (data.session && data.session.user) await linkPushSubscriptionToUser(data.session.user.id);
     } catch (e) {
       window.alert("Couldn't enable notifications — please try again.");
     }
@@ -502,6 +504,30 @@
   // ------------------------------------------------------------------
   // Account (Supabase magic-link auth)
   // ------------------------------------------------------------------
+  async function sha256Hex(text) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Links this device's existing push subscription (if any) to the
+  // signed-in user, so a future account-wide feature (e.g. multiple
+  // watchlists) can find every device belonging to one person. The
+  // subscription itself stays in Netlify Blobs untouched — this just
+  // records which user owns which blob_key (sha256 of the endpoint,
+  // same formula as keyForEndpoint() in netlify/functions/_shared.mjs).
+  async function linkPushSubscriptionToUser(userId) {
+    if (!userId || !pushSupported()) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) return;
+      const blobKey = await sha256Hex(sub.endpoint);
+      await supabaseClient.from("push_subscriptions").upsert({ blob_key: blobKey, user_id: userId });
+    } catch (e) {
+      /* best effort — device linking isn't required for core functionality */
+    }
+  }
+
   function renderAccountScreen(session) {
     const signedOut = document.getElementById("account-signed-out");
     const signedIn = document.getElementById("account-signed-in");
@@ -542,10 +568,12 @@
     // after the person clicks the magic link and lands back here.
     supabaseClient.auth.onAuthStateChange((_event, session) => {
       renderAccountScreen(session);
+      if (session && session.user) linkPushSubscriptionToUser(session.user.id);
     });
     // Initial paint, in case a session already exists in this browser.
     supabaseClient.auth.getSession().then(({ data }) => {
       renderAccountScreen(data.session);
+      if (data.session && data.session.user) linkPushSubscriptionToUser(data.session.user.id);
     });
   }
 
