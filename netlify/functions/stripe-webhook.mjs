@@ -31,55 +31,108 @@ function sanitizeForPdf(text) {
 // if anything ever invokes it directly, as happened here.
 const PAGE_SIZE = [612, 792]; // US Letter, points
 const MARGIN = 50;
-const ROW_HEIGHT = 18;
+const ROW_HEIGHT = 20;
+const HEADER_HEIGHT = 92;
+const BRAND = rgb(0.11, 0.16, 0.32); // navy
+const RATE_UP = rgb(0.72, 0.16, 0.16); // red — rate increased
+const RATE_DOWN = rgb(0.13, 0.5, 0.27); // green — rate decreased
+const ZEBRA = rgb(0.96, 0.96, 0.97);
+const GRAY = rgb(0.45, 0.45, 0.45);
+const WHITE = rgb(1, 1, 1);
+const INK = rgb(0.13, 0.13, 0.15);
 
 async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pages = [];
+  let page;
+  let y;
 
-  let page = pdfDoc.addPage(PAGE_SIZE);
-  let y = PAGE_SIZE[1] - MARGIN;
-
-  const drawText = (text, { size = 10, bold = false, color = rgb(0, 0, 0) } = {}) => {
-    page.drawText(text, { x: MARGIN, y, size, font: bold ? boldFont : font, color });
-  };
-
-  drawText("Tariff Watch — Tariff Exposure Report", { size: 18, bold: true });
-  y -= 28;
-  drawText(`Watchlist: ${watchlistName || "My Watchlist"}`, { size: 11 });
-  y -= 16;
-  drawText(`Generated: ${generatedAt}`, { size: 11, color: rgb(0.4, 0.4, 0.4) });
-  y -= 30;
-
-  if (items.length === 0) {
-    drawText("No tracked HS codes were found on this watchlist.", { size: 11 });
-  } else {
-    drawText("HS code", { size: 10, bold: true });
-    page.drawText("Description", { x: MARGIN + 90, y, size: 10, font: boldFont });
-    page.drawText("Rate", { x: MARGIN + 340, y, size: 10, font: boldFont });
-    page.drawText("Effective", { x: MARGIN + 400, y, size: 10, font: boldFont });
-    y -= ROW_HEIGHT;
-    page.drawLine({
-      start: { x: MARGIN, y: y + 12 },
-      end: { x: PAGE_SIZE[0] - MARGIN, y: y + 12 },
-      thickness: 0.5,
-      color: rgb(0.7, 0.7, 0.7),
-    });
-
-    for (const item of items) {
-      if (y < MARGIN + ROW_HEIGHT) {
-        page = pdfDoc.addPage(PAGE_SIZE);
-        y = PAGE_SIZE[1] - MARGIN;
-      }
-      const desc = sanitizeForPdf(item.desc).slice(0, 48);
-      page.drawText(item.hs || item.id, { x: MARGIN, y, size: 9, font });
-      page.drawText(desc, { x: MARGIN + 90, y, size: 9, font });
-      page.drawText(sanitizeForPdf(`${item.rate ?? "-"}%`), { x: MARGIN + 340, y, size: 9, font });
-      page.drawText(sanitizeForPdf(item.effectiveDate || "-"), { x: MARGIN + 400, y, size: 9, font });
-      y -= ROW_HEIGHT;
+  function startPage(withBrandHeader) {
+    page = pdfDoc.addPage(PAGE_SIZE);
+    pages.push(page);
+    if (withBrandHeader) {
+      page.drawRectangle({ x: 0, y: PAGE_SIZE[1] - HEADER_HEIGHT, width: PAGE_SIZE[0], height: HEADER_HEIGHT, color: BRAND });
+      page.drawText("TARIFF WATCH", { x: MARGIN, y: PAGE_SIZE[1] - 38, size: 11, font: bold, color: WHITE });
+      page.drawText("Tariff Exposure Report", { x: MARGIN, y: PAGE_SIZE[1] - 62, size: 21, font: bold, color: WHITE });
+      y = PAGE_SIZE[1] - HEADER_HEIGHT - 28;
+    } else {
+      page.drawText("Tariff Exposure Report (continued)", { x: MARGIN, y: PAGE_SIZE[1] - MARGIN, size: 10, font: bold, color: GRAY });
+      y = PAGE_SIZE[1] - MARGIN - 26;
     }
   }
+
+  const ensureSpace = (needed) => {
+    if (y - needed < MARGIN + 30) startPage(false);
+  };
+
+  startPage(true);
+
+  page.drawText(sanitizeForPdf(`Watchlist: ${watchlistName || "My Watchlist"}`), { x: MARGIN, y, size: 11, font, color: INK });
+  y -= 15;
+  page.drawText(`Generated: ${generatedAt}`, { x: MARGIN, y, size: 9, font, color: GRAY });
+  y -= 22;
+
+  // Summary strip — the headline numbers before anyone has to read a row.
+  const changed = items.filter((i) => i.priorRate != null && i.priorRate !== i.rate).length;
+  const avgRate = items.length ? Math.round(items.reduce((s, i) => s + (i.rate || 0), 0) / items.length) : 0;
+  const summary = `${items.length} HS code${items.length === 1 ? "" : "s"} tracked   |   ${changed} recently changed   |   ${avgRate}% average rate`;
+  page.drawRectangle({ x: MARGIN, y: y - 22, width: PAGE_SIZE[0] - 2 * MARGIN, height: 28, color: ZEBRA });
+  page.drawText(sanitizeForPdf(summary), { x: MARGIN + 10, y: y - 14, size: 10, font: bold, color: BRAND });
+  y -= 50;
+
+  if (items.length === 0) {
+    page.drawText("No tracked HS codes were found on this watchlist.", { x: MARGIN, y, size: 11, font, color: INK });
+  } else {
+    const byCategory = new Map();
+    for (const item of items) {
+      const cat = item.category || "Other";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat).push(item);
+    }
+
+    let rowIndex = 0;
+    for (const [category, catItems] of byCategory) {
+      ensureSpace(40);
+      page.drawText(sanitizeForPdf(category).toUpperCase(), { x: MARGIN, y, size: 9, font: bold, color: BRAND });
+      y -= 5;
+      page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 1, color: BRAND });
+      y -= 17;
+
+      for (const item of catItems) {
+        ensureSpace(ROW_HEIGHT);
+        if (rowIndex % 2 === 0) {
+          page.drawRectangle({ x: MARGIN, y: y - 5, width: PAGE_SIZE[0] - 2 * MARGIN, height: ROW_HEIGHT, color: ZEBRA });
+        }
+        const desc = sanitizeForPdf(item.desc).slice(0, 44);
+        page.drawText(item.hs || item.id, { x: MARGIN + 6, y, size: 9, font, color: INK });
+        page.drawText(desc, { x: MARGIN + 95, y, size: 9, font, color: INK });
+
+        let rateText = `${item.rate ?? "-"}%`;
+        let rateColor = INK;
+        if (item.priorRate != null && item.priorRate !== item.rate) {
+          rateText = `${item.priorRate}% -> ${item.rate}%`;
+          rateColor = item.rate > item.priorRate ? RATE_UP : RATE_DOWN;
+        }
+        page.drawText(sanitizeForPdf(rateText), { x: MARGIN + 340, y, size: 9, font: bold, color: rateColor });
+        page.drawText(sanitizeForPdf(item.effectiveDate || "-"), { x: MARGIN + 445, y, size: 8, font, color: GRAY });
+
+        y -= ROW_HEIGHT;
+        rowIndex++;
+      }
+      y -= 10;
+    }
+  }
+
+  const total = pages.length;
+  pages.forEach((p, idx) => {
+    p.drawLine({ start: { x: MARGIN, y: 38 }, end: { x: PAGE_SIZE[0] - MARGIN, y: 38 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+    p.drawText("Generated by Tariff Watch  -  Not legal or customs advice  -  verify with official sources", {
+      x: MARGIN, y: 26, size: 7, font, color: GRAY,
+    });
+    p.drawText(`Page ${idx + 1} of ${total}`, { x: PAGE_SIZE[0] - MARGIN - 55, y: 26, size: 7, font, color: GRAY });
+  });
 
   return pdfDoc.save();
 }
