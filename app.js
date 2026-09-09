@@ -655,6 +655,32 @@
     }
   }
 
+  // Blobs referenced by the currently rendered "My reports" list — kept
+  // in JS memory (not on the DOM) since a blob: URL is only valid within
+  // the page realm that created it, and Web Share needs the raw Blob/File.
+  const reportBlobs = new Map();
+
+  async function openReport(reportId) {
+    const blob = reportBlobs.get(reportId);
+    if (!blob) return;
+    const file = new File([blob], "tariff-exposure-report.pdf", { type: "application/pdf" });
+    // Web Share (with files) is the most reliable way to hand a file to
+    // an installed PWA's host OS — brings up the native Save/Share sheet.
+    // Plain <a download> or target="_blank" on a blob: URL is unreliable
+    // in standalone/installed PWA mode on several mobile browsers.
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "Tariff Exposure Report" });
+        return;
+      } catch (e) {
+        /* user cancelled, or share failed — fall through to the URL below */
+      }
+    }
+    // Same-tab navigation (not a new tab/window) keeps the blob: URL
+    // valid, since it never leaves this page's JS realm.
+    window.location.href = URL.createObjectURL(blob);
+  }
+
   async function renderMyReports(userId) {
     const container = document.getElementById("my-reports");
     if (!container || !userId) return;
@@ -692,15 +718,21 @@
           }
 
           if (blob) {
-            const url = URL.createObjectURL(blob);
+            reportBlobs.set(p.id, blob);
             const savedNote = navigator.onLine ? "" : " (saved on this device)";
-            return `<div class="field-hint">${date} — ${p.report_type}: <a href="${url}" download="tariff-exposure-report.pdf">Download PDF</a>${savedNote}</div>`;
+            return `<div class="field-hint">${date} — ${p.report_type}: <a href="#" data-report-id="${p.id}">Open PDF</a>${savedNote}</div>`;
           }
           return `<div class="field-hint">${date} — ${p.report_type}: <em>${navigator.onLine ? "unavailable right now" : "offline — connect to download once, then it's saved"}</em></div>`;
         })
       );
       container.innerHTML =
         `<div class="section-head" style="margin-top:24px;"><h2>My reports</h2></div>` + rows.join("");
+      container.querySelectorAll("[data-report-id]").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          openReport(el.dataset.reportId);
+        });
+      });
     } catch (e) {
       /* best effort */
     }
