@@ -128,13 +128,21 @@ export default async (req) => {
     const filePath = `${userId}/${transaction.id}.pdf`;
     const { error: uploadError } = await supabase.storage
       .from("reports")
-      .upload(filePath, pdfBytes, { contentType: "application/pdf", upsert: true });
+      // Supabase's Node storage client wants a Buffer/ArrayBuffer, not a
+      // bare Uint8Array — pdf-lib's .save() returns the latter.
+      .upload(filePath, Buffer.from(pdfBytes), { contentType: "application/pdf", upsert: true });
 
-    if (!uploadError) {
-      await supabase.from("report_purchases").update({ file_path: filePath }).eq("transaction_id", transaction.id);
+    if (uploadError) {
+      console.error("Report upload failed:", uploadError.message);
+    } else {
+      const { error: updateError } = await supabase
+        .from("report_purchases")
+        .update({ file_path: filePath })
+        .eq("transaction_id", transaction.id);
+      if (updateError) console.error("Failed to save file_path:", updateError.message);
     }
   } catch (e) {
-    /* best effort — see comment above */
+    console.error("PDF generation failed:", e);
   }
 
   return jsonResponse({ ok: true, transactionId: transaction.id });
