@@ -27,13 +27,19 @@ export default async (req) => {
 
   // Verifying the token this way (publishable key + the caller's own JWT)
   // asks Supabase's own auth server whether the token is valid — no
-  // secret/service-role key needed here at all.
-  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  // secret/service-role key needed here at all. Setting the same token
+  // as a global header also means any .from() query below runs as this
+  // user, so Row Level Security applies exactly as it would in the browser.
+  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData?.user) {
     return jsonResponse({ error: "Invalid or expired session" }, { status: 401 });
   }
   const user = userData.user;
+
+  const { data: watchlistRow } = await supabase.from("watchlists").select("id").eq("user_id", user.id).maybeSingle();
 
   let body;
   try {
@@ -57,7 +63,7 @@ export default async (req) => {
       // next) knows whose transaction/profile to update.
       client_reference_id: user.id,
       customer_email: user.email,
-      metadata: { product: "exposure_pdf" },
+      metadata: { product: "exposure_pdf", watchlist_id: watchlistRow?.id || "" },
       success_url: `${origin}/?checkout=success`,
       cancel_url: `${origin}/?checkout=cancelled`,
     });

@@ -6,6 +6,10 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { jsonResponse } from "./_shared.mjs";
+import { buildExposureReportPdf } from "./_report.mjs";
+import tariffData from "../../data.json";
+
+const TARIFF_BY_ID = new Map(tariffData.items.map((item) => [item.id, item]));
 
 export default async (req) => {
   if (req.method !== "POST") {
@@ -87,12 +91,50 @@ export default async (req) => {
     stripe_payment_intent_id: paymentIntentId,
     status: "paid",
     transaction_id: transaction.id,
+    watchlist_id: session.metadata?.watchlist_id || null,
   });
 
   if (purchaseError) {
     // The payment is safely recorded either way — this just means the
     // report_purchases row needs a manual look, not a failure back to Stripe.
     return jsonResponse({ ok: true, warning: `transaction saved, report_purchases failed: ${purchaseError.message}` });
+  }
+
+  // Generate and upload the PDF. Best-effort: if this step fails, the
+  // payment and entitlement are still safely recorded above — someone
+  // can re-run report generation later rather than losing the sale.
+  try {
+    const watchlistId = session.metadata?.watchlist_id || null;
+    let items = [];
+    let watchlistName = "My Watchlist";
+    if (watchlistId) {
+      const { data: watchlistRow } = await supabase
+        .from("watchlists")
+        .select("name, hs_codes")
+        .eq("id", watchlistId)
+        .maybeSingle();
+      if (watchlistRow) {
+        watchlistName = watchlistRow.name || watchlistName;
+        items = (watchlistRow.hs_codes || []).map((id) => TARIFF_BY_ID.get(id)).filter(Boolean);
+      }
+    }
+
+    const pdfBytes = await buildExposureReportPdf({
+      watchlistName,
+      generatedAt: new Date().toISOString().slice(0, 10),
+      items,
+    });
+
+    const filePath = `${userId}/${transaction.id}.pdf`;
+    const { error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(filePath, pdfBytes, { contentType: "application/pdf", upsert: true });
+
+    if (!uploadError) {
+      await supabase.from("report_purchases").update({ file_path: filePath }).eq("transaction_id", transaction.id);
+    }
+  } catch (e) {
+    /* best effort — see comment above */
   }
 
   return jsonResponse({ ok: true, transactionId: transaction.id });
