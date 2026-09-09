@@ -57,6 +57,7 @@ export default async (req) => {
       // next) knows whose transaction/profile to update.
       client_reference_id: user.id,
       customer_email: user.email,
+      metadata: { product: "exposure_pdf" },
       success_url: `${origin}/?checkout=success`,
       cancel_url: `${origin}/?checkout=cancelled`,
     });
