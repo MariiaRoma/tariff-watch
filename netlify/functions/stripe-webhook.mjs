@@ -11,6 +11,19 @@ import tariffData from "../../data.json";
 
 const TARIFF_BY_ID = new Map(tariffData.items.map((item) => [item.id, item]));
 
+// pdf-lib's built-in standard fonts (Helvetica) only support the WinAnsi
+// codepage — anything outside it throws at draw time instead of just
+// rendering as a box. Checked every description in data.json: the only
+// non-Latin-1 characters in use are ≤, ≥ (not in WinAnsi — replaced with
+// ASCII) and em/en dashes (—, – — these ARE in WinAnsi, left as-is).
+// The final regex is a safety net for anything not yet seen in the data.
+function sanitizeForPdf(text) {
+  return String(text || "")
+    .replace(/≤/g, "<=")
+    .replace(/≥/g, ">=")
+    .replace(/[^\x00-\xFF\u2013\u2014]/g, "?");
+}
+
 // Builds the "Tariff Exposure Report" PDF as raw bytes. Kept inline in
 // this file (rather than a separate _report.mjs) because every .mjs
 // file directly inside netlify/functions/ gets auto-registered as its
@@ -59,11 +72,11 @@ async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
         page = pdfDoc.addPage(PAGE_SIZE);
         y = PAGE_SIZE[1] - MARGIN;
       }
-      const desc = (item.desc || "").slice(0, 48);
+      const desc = sanitizeForPdf(item.desc).slice(0, 48);
       page.drawText(item.hs || item.id, { x: MARGIN, y, size: 9, font });
       page.drawText(desc, { x: MARGIN + 90, y, size: 9, font });
-      page.drawText(`${item.rate ?? "—"}%`, { x: MARGIN + 340, y, size: 9, font });
-      page.drawText(item.effectiveDate || "—", { x: MARGIN + 400, y, size: 9, font });
+      page.drawText(sanitizeForPdf(`${item.rate ?? "-"}%`), { x: MARGIN + 340, y, size: 9, font });
+      page.drawText(sanitizeForPdf(item.effectiveDate || "-"), { x: MARGIN + 400, y, size: 9, font });
       y -= ROW_HEIGHT;
     }
   }
