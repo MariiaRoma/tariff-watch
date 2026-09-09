@@ -29,6 +29,10 @@
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_HuYXhX8a-U4_mGuwEM0Rfw_b_bNxOi8";
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+  // Stripe price ids are not secret — safe to hardcode alongside the
+  // publishable key, same trust model as VAPID_PUBLIC_KEY above.
+  const PRICE_EXPOSURE_REPORT = "price_1UDo2h2XFD9iubrBAGsgoCFK";
+
   function loadJSON(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -557,12 +561,42 @@
     await supabaseClient.auth.signOut();
   }
 
+  async function buyExposureReport() {
+    const statusEl = document.getElementById("checkout-status");
+    statusEl.textContent = "Redirecting to checkout...";
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        statusEl.textContent = "Please sign in first.";
+        return;
+      }
+      const res = await fetch("/.netlify/functions/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ priceId: PRICE_EXPOSURE_REPORT }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.url) {
+        statusEl.textContent = `Error: ${payload.error || "Could not start checkout"}`;
+        return;
+      }
+      window.location.href = payload.url;
+    } catch (e) {
+      statusEl.textContent = "Something went wrong — please try again.";
+    }
+  }
+
   function initAccount() {
     document.getElementById("account-send-link").addEventListener("click", () => {
       const email = document.getElementById("account-email").value.trim();
       if (email) sendMagicLink(email);
     });
     document.getElementById("account-sign-out").addEventListener("click", signOutAccount);
+    document.getElementById("buy-exposure-report").addEventListener("click", buyExposureReport);
 
     // Fires on sign-in, sign-out, and token refresh — including right
     // after the person clicks the magic link and lands back here.
@@ -580,6 +614,21 @@
   function init() {
     // header sync line
     document.getElementById("data-sync-line").textContent = `Sample data as of ${DATA_LAST_SYNCED}`;
+
+    // Returning from Stripe Checkout — show a quick status and clean the
+    // URL so a page refresh doesn't re-trigger this.
+    const checkoutParam = new URLSearchParams(window.location.search).get("checkout");
+    if (checkoutParam === "success" || checkoutParam === "cancelled") {
+      switchTab("account");
+      const statusEl = document.getElementById("checkout-status");
+      if (statusEl) {
+        statusEl.textContent =
+          checkoutParam === "success"
+            ? "Payment received — thank you!"
+            : "Checkout cancelled — no charge was made.";
+      }
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     populateCategoryChips();
     renderWatchlist();
