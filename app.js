@@ -32,6 +32,8 @@
   // Stripe price ids are not secret — safe to hardcode alongside the
   // publishable key, same trust model as VAPID_PUBLIC_KEY above.
   const PRICE_EXPOSURE_REPORT = "price_1UDo2h2XFD9iubrBAGsgoCFK";
+  const PRICE_BULK_CALC = "price_1UDrxf2XFD9iubrBNqbsGydu";
+  let bulkParsedRows = [];
 
   function loadJSON(key, fallback) {
     try {
@@ -269,7 +271,7 @@
 
   function calcState() {
     return {
-      direction: document.querySelector(".direction-toggle button.is-active").dataset.dir,
+      direction: document.querySelector("#screen-calculator .direction-toggle button.is-active").dataset.dir,
       value: parseFloat(document.getElementById("calc-value").value) || 0,
       rate: parseFloat(document.getElementById("calc-rate").value) || 0,
       extraRate: parseFloat(document.getElementById("calc-extra-rate").value) || 0,
@@ -324,7 +326,7 @@
     const item = byId(id);
     if (!item) return;
     switchTab("calculator");
-    document.querySelectorAll(".direction-toggle button").forEach((b) => {
+    document.querySelectorAll("#screen-calculator .direction-toggle button").forEach((b) => {
       b.classList.toggle("is-active", b.dataset.dir === item.direction);
     });
     document.getElementById("calc-hs-label").textContent = `${item.hs} — ${item.desc}`;
@@ -681,6 +683,10 @@
     window.location.href = URL.createObjectURL(blob);
   }
 
+  function reportTypeLabel(type) {
+    return { exposure_pdf: "Tariff Exposure Report", bulk_calc: "Bulk Landed-Cost Report" }[type] || type;
+  }
+
   async function renderMyReports(userId) {
     const container = document.getElementById("my-reports");
     if (!container || !userId) return;
@@ -698,7 +704,7 @@
         purchases.map(async (p) => {
           const date = new Date(p.created_at).toLocaleDateString();
           if (!p.file_path) {
-            return `<div class="field-hint">${date} — ${p.report_type}: preparing…</div>`;
+            return `<div class="field-hint">${date} — ${reportTypeLabel(p.report_type)}: preparing…</div>`;
           }
 
           // Prefer a copy already saved on this device — works offline
@@ -720,9 +726,9 @@
           if (blob) {
             reportBlobs.set(p.id, blob);
             const savedNote = navigator.onLine ? "" : " (saved on this device)";
-            return `<div class="field-hint">${date} — ${p.report_type}: <a href="#" data-report-id="${p.id}">Open PDF</a>${savedNote}</div>`;
+            return `<div class="field-hint">${date} — ${reportTypeLabel(p.report_type)}: <a href="#" data-report-id="${p.id}">Open PDF</a>${savedNote}</div>`;
           }
-          return `<div class="field-hint">${date} — ${p.report_type}: <em>${navigator.onLine ? "unavailable right now" : "offline — connect to download once, then it's saved"}</em></div>`;
+          return `<div class="field-hint">${date} — ${reportTypeLabel(p.report_type)}: <em>${navigator.onLine ? "unavailable right now" : "offline — connect to download once, then it's saved"}</em></div>`;
         })
       );
       container.innerHTML =
@@ -738,6 +744,100 @@
     }
   }
 
+  function initBulkCalculator() {
+    document.querySelectorAll("#screen-account [data-bulk-dir]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#screen-account [data-bulk-dir]").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        document.getElementById("bulk-ocean-row").style.display = btn.dataset.bulkDir === "ca_to_us" ? "flex" : "none";
+      });
+    });
+
+    document.getElementById("bulk-csv-file").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      const previewEl = document.getElementById("bulk-preview");
+      const buyBtn = document.getElementById("buy-bulk-calc");
+      if (!file) return;
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const rows = results.data
+            .map((r) => ({
+              hs_code: (r.hs_code || "").trim(),
+              quantity: parseFloat(r.quantity),
+              unit_value: parseFloat(r.unit_value),
+              freight: parseFloat(r.freight) || 0,
+              insurance: parseFloat(r.insurance) || 0,
+            }))
+            .filter((r) => r.hs_code && !isNaN(r.quantity) && !isNaN(r.unit_value));
+
+          const matched = rows.filter((r) => byId(r.hs_code)).length;
+          const skipped = results.data.length - rows.length;
+          bulkParsedRows = rows;
+
+          if (rows.length === 0) {
+            previewEl.innerHTML = `<p class="field-hint">No valid rows found — check that your CSV has hs_code, quantity, and unit_value columns.</p>`;
+            buyBtn.style.display = "none";
+            return;
+          }
+          previewEl.innerHTML = `<p class="field-hint">${rows.length} row(s) ready · ${matched} match known HS codes${
+            skipped ? ` · ${skipped} row(s) skipped (missing data)` : ""
+          }</p>`;
+          buyBtn.style.display = "block";
+        },
+        error: () => {
+          previewEl.innerHTML = `<p class="field-hint">Couldn't read that file — make sure it's a valid CSV.</p>`;
+          buyBtn.style.display = "none";
+        },
+      });
+    });
+
+    document.getElementById("buy-bulk-calc").addEventListener("click", buyBulkCalc);
+  }
+
+  async function buyBulkCalc() {
+    const statusEl = document.getElementById("bulk-status");
+    if (bulkParsedRows.length === 0) return;
+    statusEl.textContent = "Preparing...";
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        statusEl.textContent = "Please sign in first.";
+        return;
+      }
+      const direction = document.querySelector("#screen-account [data-bulk-dir].is-active").dataset.bulkDir;
+      const oceanFreight = document.getElementById("bulk-ocean").checked;
+
+      const { data: bulkRow, error: insertError } = await supabaseClient
+        .from("bulk_calculations")
+        .insert({ user_id: session.user.id, direction, ocean_freight: oceanFreight, rows: bulkParsedRows })
+        .select()
+        .single();
+
+      if (insertError || !bulkRow) {
+        statusEl.textContent = `Error: ${insertError?.message || "Could not save calculation"}`;
+        return;
+      }
+
+      statusEl.textContent = "Redirecting to checkout...";
+      const res = await fetch("/.netlify/functions/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ priceId: PRICE_BULK_CALC, product: "bulk_calc", refId: bulkRow.id }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.url) {
+        statusEl.textContent = `Error: ${payload.error || "Could not start checkout"}`;
+        return;
+      }
+      window.location.href = payload.url;
+    } catch (e) {
+      statusEl.textContent = "Something went wrong — please try again.";
+    }
+  }
+
   function initAccount() {
     document.getElementById("account-send-link").addEventListener("click", () => {
       const email = document.getElementById("account-email").value.trim();
@@ -745,6 +845,7 @@
     });
     document.getElementById("account-sign-out").addEventListener("click", signOutAccount);
     document.getElementById("buy-exposure-report").addEventListener("click", buyExposureReport);
+    initBulkCalculator();
 
     // Fires on sign-in, sign-out, and token refresh — including right
     // after the person clicks the magic link and lands back here.
@@ -853,9 +954,9 @@
     });
 
     // Calculator controls
-    document.querySelectorAll(".direction-toggle button").forEach((btn) => {
+    document.querySelectorAll("#screen-calculator .direction-toggle button").forEach((btn) => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".direction-toggle button").forEach((b) => b.classList.remove("is-active"));
+        document.querySelectorAll("#screen-calculator .direction-toggle button").forEach((b) => b.classList.remove("is-active"));
         btn.classList.add("is-active");
         document.getElementById("calc-ocean-row").style.display = btn.dataset.dir === "ca_to_us" ? "flex" : "none";
         document.getElementById("calc-gst-note").style.display = btn.dataset.dir === "us_to_ca" ? "block" : "none";

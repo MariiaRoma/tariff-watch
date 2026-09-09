@@ -201,6 +201,37 @@
         <p class="section-intro">Get a PDF summary of tariff rate changes for your watchlist.</p>
         <button class="btn btn--full" id="buy-exposure-report" type="button">Buy Tariff Exposure Report — $12</button>
         <p class="field-hint" id="checkout-status"></p>
+
+        <div class="section-head" style="margin-top:24px;">
+          <h2>Bulk Landed-Cost Calculator</h2>
+        </div>
+        <p class="section-intro">Upload a CSV of shipment lines and get a landed-cost PDF for all of them at once.</p>
+
+        <div class="calc-form">
+          <div class="field">
+            <label>Direction</label>
+            <div class="direction-toggle">
+              <button type="button" class="is-active" data-bulk-dir="us_to_ca">Importing into Canada<br>(US → CA)</button>
+              <button type="button" data-bulk-dir="ca_to_us">Importing into the US<br>(CA → US)</button>
+            </div>
+          </div>
+
+          <div class="checkbox-row" id="bulk-ocean-row" style="display:none;">
+            <input type="checkbox" id="bulk-ocean">
+            <label for="bulk-ocean">Ocean freight (adds Harbor Maintenance Fee)</label>
+          </div>
+
+          <div class="field">
+            <label for="bulk-csv-file">CSV file</label>
+            <input type="file" id="bulk-csv-file" accept=".csv,text/csv">
+            <span class="field-hint">Columns: hs_code, quantity, unit_value, freight, insurance (freight/insurance optional).</span>
+          </div>
+        </div>
+
+        <div id="bulk-preview"></div>
+        <button class="btn btn--full" id="buy-bulk-calc" type="button" style="display:none;">Calculate &amp; Buy PDF — $24</button>
+        <p class="field-hint" id="bulk-status"></p>
+
         <div id="my-reports"></div>
       </div>
     </section>
@@ -248,6 +279,7 @@
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
