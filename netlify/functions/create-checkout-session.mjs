@@ -4,7 +4,11 @@
 // product and returns its hosted URL for the browser to redirect to.
 //
 // Header: Authorization: Bearer <Supabase access token>
-// Body: { priceId }
+// Body: { priceId, product, refId? }
+//   - product "exposure_pdf": refId is ignored — the user's watchlist
+//     is looked up automatically.
+//   - product "bulk_calc": refId is the bulk_calculations row id the
+//     browser already created (holds the parsed CSV rows).
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { jsonResponse } from "./_shared.mjs";
@@ -39,17 +43,29 @@ export default async (req) => {
   }
   const user = userData.user;
 
-  const { data: watchlistRow } = await supabase.from("watchlists").select("id").eq("user_id", user.id).maybeSingle();
-
   let body;
   try {
     body = await req.json();
   } catch {
     return jsonResponse({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const priceId = body?.priceId;
-  if (!priceId) {
-    return jsonResponse({ error: "Missing priceId" }, { status: 400 });
+  const { priceId, product, refId } = body || {};
+  if (!priceId || !product) {
+    return jsonResponse({ error: "Missing priceId or product" }, { status: 400 });
+  }
+
+  const metadata = { product };
+  if (product === "exposure_pdf") {
+    const { data: watchlistRow } = await supabase.from("watchlists").select("id").eq("user_id", user.id).maybeSingle();
+    metadata.watchlist_id = watchlistRow?.id || "";
+  } else if (product === "bulk_calc") {
+    if (!refId) return jsonResponse({ error: "Missing refId for bulk_calc" }, { status: 400 });
+    // Confirm the bulk_calculations row is really this user's (RLS via
+    // the token above already enforces this, but a clear error is nicer
+    // than a silent Stripe metadata mismatch later).
+    const { data: bulkRow } = await supabase.from("bulk_calculations").select("id").eq("id", refId).maybeSingle();
+    if (!bulkRow) return jsonResponse({ error: "Bulk calculation not found" }, { status: 404 });
+    metadata.bulk_calc_id = refId;
   }
 
   const stripe = new Stripe(STRIPE_SECRET_KEY);
@@ -59,11 +75,11 @@ export default async (req) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: priceId, quantity: 1 }],
-      // Ties the Stripe session to our own user id so the webhook (built
-      // next) knows whose transaction/profile to update.
+      // Ties the Stripe session to our own user id so the webhook knows
+      // whose transaction/profile to update.
       client_reference_id: user.id,
       customer_email: user.email,
-      metadata: { product: "exposure_pdf", watchlist_id: watchlistRow?.id || "" },
+      metadata,
       success_url: `${origin}/?checkout=success`,
       cancel_url: `${origin}/?checkout=cancelled`,
     });
