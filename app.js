@@ -755,45 +755,69 @@
 
     document.getElementById("bulk-csv-file").addEventListener("change", (e) => {
       const file = e.target.files[0];
-      const previewEl = document.getElementById("bulk-preview");
-      const buyBtn = document.getElementById("buy-bulk-calc");
       if (!file) return;
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          const rows = results.data
-            .map((r) => ({
-              hs_code: (r.hs_code || "").trim(),
-              quantity: parseFloat(r.quantity),
-              unit_value: parseFloat(r.unit_value),
-              freight: parseFloat(r.freight) || 0,
-              insurance: parseFloat(r.insurance) || 0,
-            }))
-            .filter((r) => r.hs_code && !isNaN(r.quantity) && !isNaN(r.unit_value));
-
-          const matched = rows.filter((r) => byId(r.hs_code)).length;
-          const skipped = results.data.length - rows.length;
-          bulkParsedRows = rows;
-
-          if (rows.length === 0) {
-            previewEl.innerHTML = `<p class="field-hint">No valid rows found — check that your CSV has hs_code, quantity, and unit_value columns.</p>`;
-            buyBtn.style.display = "none";
-            return;
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+      if (isExcel) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const workbook = XLSX.read(evt.target.result, { type: "array" });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+            processBulkRows(rawRows);
+          } catch (err) {
+            showBulkParseError("Couldn't read that Excel file — make sure it's a valid .xlsx or .xls.");
           }
-          previewEl.innerHTML = `<p class="field-hint">${rows.length} row(s) ready · ${matched} match known HS codes${
-            skipped ? ` · ${skipped} row(s) skipped (missing data)` : ""
-          }</p>`;
-          buyBtn.style.display = "block";
-        },
-        error: () => {
-          previewEl.innerHTML = `<p class="field-hint">Couldn't read that file — make sure it's a valid CSV.</p>`;
-          buyBtn.style.display = "none";
-        },
-      });
+        };
+        reader.onerror = () => showBulkParseError("Couldn't read that file.");
+        reader.readAsArrayBuffer(file);
+      } else {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => processBulkRows(results.data),
+          error: () => showBulkParseError("Couldn't read that file — make sure it's a valid CSV."),
+        });
+      }
     });
 
     document.getElementById("buy-bulk-calc").addEventListener("click", buyBulkCalc);
+  }
+
+  function showBulkParseError(message) {
+    document.getElementById("bulk-preview").innerHTML = `<p class="field-hint">${message}</p>`;
+    document.getElementById("buy-bulk-calc").style.display = "none";
+  }
+
+  // Shared by both the CSV (PapaParse) and Excel (SheetJS) paths — both
+  // produce the same shape: an array of plain row objects keyed by
+  // column header, before any type coercion or validation.
+  function processBulkRows(rawRows) {
+    const previewEl = document.getElementById("bulk-preview");
+    const buyBtn = document.getElementById("buy-bulk-calc");
+    const rows = rawRows
+      .map((r) => ({
+        hs_code: String(r.hs_code ?? "").trim(),
+        quantity: parseFloat(r.quantity),
+        unit_value: parseFloat(r.unit_value),
+        freight: parseFloat(r.freight) || 0,
+        insurance: parseFloat(r.insurance) || 0,
+      }))
+      .filter((r) => r.hs_code && !isNaN(r.quantity) && !isNaN(r.unit_value));
+
+    const matched = rows.filter((r) => byId(r.hs_code)).length;
+    const skipped = rawRows.length - rows.length;
+    bulkParsedRows = rows;
+
+    if (rows.length === 0) {
+      previewEl.innerHTML = `<p class="field-hint">No valid rows found — check that your file has hs_code, quantity, and unit_value columns.</p>`;
+      buyBtn.style.display = "none";
+      return;
+    }
+    previewEl.innerHTML = `<p class="field-hint">${rows.length} row(s) ready · ${matched} match known HS codes${
+      skipped ? ` · ${skipped} row(s) skipped (missing data)` : ""
+    }</p>`;
+    buyBtn.style.display = "block";
   }
 
   async function buyBulkCalc() {
