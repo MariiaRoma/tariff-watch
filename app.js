@@ -659,28 +659,66 @@
 
   // Blobs referenced by the currently rendered "My reports" list — kept
   // in JS memory (not on the DOM) since a blob: URL is only valid within
-  // the page realm that created it, and Web Share needs the raw Blob/File.
+  // the page realm that created it, and Web Share/File System Access
+  // need the raw Blob/File, not just a URL string.
   const reportBlobs = new Map();
+  const REPORT_FILENAME = "tariff-watch-report.pdf";
 
-  async function openReport(reportId) {
+  function openReportView(reportId) {
     const blob = reportBlobs.get(reportId);
     if (!blob) return;
-    const file = new File([blob], "tariff-exposure-report.pdf", { type: "application/pdf" });
-    // Web Share (with files) is the most reliable way to hand a file to
-    // an installed PWA's host OS — brings up the native Save/Share sheet.
-    // Plain <a download> or target="_blank" on a blob: URL is unreliable
-    // in standalone/installed PWA mode on several mobile browsers.
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    // Same-tab navigation (not a new tab/window) keeps the blob: URL
+    // valid, since it never leaves this page's JS realm — opening a new
+    // tab/window from an installed PWA can hand off to a different
+    // browser process where the blob: reference doesn't exist.
+    window.location.href = URL.createObjectURL(blob);
+  }
+
+  async function saveReport(reportId) {
+    const blob = reportBlobs.get(reportId);
+    if (!blob) return;
+    // File System Access API — lets the person pick exactly where to
+    // save (supported on desktop Chrome/Edge and newer Android Chrome).
+    if (window.showSaveFilePicker) {
       try {
-        await navigator.share({ files: [file], title: "Tariff Exposure Report" });
+        const handle = await window.showSaveFilePicker({
+          suggestedName: REPORT_FILENAME,
+          types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
         return;
       } catch (e) {
-        /* user cancelled, or share failed — fall through to the URL below */
+        if (e?.name === "AbortError") return; // person cancelled the picker — don't also trigger the fallback
       }
     }
-    // Same-tab navigation (not a new tab/window) keeps the blob: URL
-    // valid, since it never leaves this page's JS realm.
-    window.location.href = URL.createObjectURL(blob);
+    // Fallback: classic browser download link. Works in an ordinary
+    // browser tab and on desktop; unreliable in some installed-PWA
+    // contexts on mobile — Share is the more reliable option there.
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = REPORT_FILENAME;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function shareReport(reportId) {
+    const blob = reportBlobs.get(reportId);
+    if (!blob) return;
+    const file = new File([blob], REPORT_FILENAME, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "Tariff Watch Report" });
+      } catch (e) {
+        /* person cancelled the share sheet — nothing else to do */
+      }
+    } else {
+      // No Web Share support on this browser — same-tab open is the
+      // safest remaining option (see openReportView for why not a new tab).
+      window.location.href = URL.createObjectURL(blob);
+    }
   }
 
   function reportTypeLabel(type) {
@@ -726,17 +764,25 @@
           if (blob) {
             reportBlobs.set(p.id, blob);
             const savedNote = navigator.onLine ? "" : " (saved on this device)";
-            return `<div class="field-hint">${date} — ${reportTypeLabel(p.report_type)}: <a href="#" data-report-id="${p.id}">Open PDF</a>${savedNote}</div>`;
+            return `<div class="field-hint">${date} — ${reportTypeLabel(p.report_type)}${savedNote}<br>
+              <a href="#" data-report-action="open" data-report-id="${p.id}">Open</a> ·
+              <a href="#" data-report-action="save" data-report-id="${p.id}">Save</a> ·
+              <a href="#" data-report-action="share" data-report-id="${p.id}">Share</a>
+            </div>`;
           }
           return `<div class="field-hint">${date} — ${reportTypeLabel(p.report_type)}: <em>${navigator.onLine ? "unavailable right now" : "offline — connect to download once, then it's saved"}</em></div>`;
         })
       );
       container.innerHTML =
         `<div class="section-head" style="margin-top:24px;"><h2>My reports</h2></div>` + rows.join("");
-      container.querySelectorAll("[data-report-id]").forEach((el) => {
+      container.querySelectorAll("[data-report-action]").forEach((el) => {
         el.addEventListener("click", (e) => {
           e.preventDefault();
-          openReport(el.dataset.reportId);
+          const id = el.dataset.reportId;
+          const action = el.dataset.reportAction;
+          if (action === "open") openReportView(id);
+          else if (action === "save") saveReport(id);
+          else if (action === "share") shareReport(id);
         });
       });
     } catch (e) {
