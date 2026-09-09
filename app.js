@@ -607,6 +607,54 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // Local report cache (IndexedDB)
+  // ------------------------------------------------------------------
+  // Once a report PDF has been fetched from Supabase Storage, keep a
+  // copy on-device — the app is offline-first everywhere else
+  // (service worker, watchlist in localStorage), and a paid report
+  // shouldn't stop being available just because the person is offline
+  // or the 1-hour signed URL expired.
+  const REPORTS_DB_NAME = "tariff-watch-reports";
+  const REPORTS_STORE = "pdfs";
+
+  function openReportsDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(REPORTS_DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(REPORTS_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function getCachedReportBlob(id) {
+    try {
+      const db = await openReportsDB();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(REPORTS_STORE, "readonly");
+        const req = tx.objectStore(REPORTS_STORE).get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (e) {
+      return null; // IndexedDB unavailable (e.g. private browsing) — fall back to network
+    }
+  }
+
+  async function saveCachedReportBlob(id, blob) {
+    try {
+      const db = await openReportsDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(REPORTS_STORE, "readwrite");
+        tx.objectStore(REPORTS_STORE).put(blob, id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      /* best effort — the report still downloads fine this session even if caching fails */
+    }
+  }
+
   async function renderMyReports(userId) {
     const container = document.getElementById("my-reports");
     if (!container || !userId) return;
@@ -623,13 +671,32 @@
       const rows = await Promise.all(
         purchases.map(async (p) => {
           const date = new Date(p.created_at).toLocaleDateString();
-          if (p.file_path) {
-            const { data: signed } = await supabaseClient.storage.from("reports").createSignedUrl(p.file_path, 3600);
-            if (signed?.signedUrl) {
-              return `<div class="field-hint">${date} — ${p.report_type}: <a href="${signed.signedUrl}" target="_blank" rel="noopener">Download PDF</a></div>`;
+          if (!p.file_path) {
+            return `<div class="field-hint">${date} — ${p.report_type}: preparing…</div>`;
+          }
+
+          // Prefer a copy already saved on this device — works offline
+          // and skips re-downloading every time this screen renders.
+          let blob = await getCachedReportBlob(p.id);
+          if (!blob && navigator.onLine) {
+            try {
+              const { data: signed } = await supabaseClient.storage.from("reports").createSignedUrl(p.file_path, 3600);
+              if (signed?.signedUrl) {
+                const res = await fetch(signed.signedUrl);
+                blob = await res.blob();
+                saveCachedReportBlob(p.id, blob); // fire-and-forget
+              }
+            } catch (e) {
+              /* fall through to "unavailable" below */
             }
           }
-          return `<div class="field-hint">${date} — ${p.report_type}: preparing…</div>`;
+
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            const savedNote = navigator.onLine ? "" : " (saved on this device)";
+            return `<div class="field-hint">${date} — ${p.report_type}: <a href="${url}" download="tariff-exposure-report.pdf">Download PDF</a>${savedNote}</div>`;
+          }
+          return `<div class="field-hint">${date} — ${p.report_type}: <em>${navigator.onLine ? "unavailable right now" : "offline — connect to download once, then it's saved"}</em></div>`;
         })
       );
       container.innerHTML =
