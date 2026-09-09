@@ -63,6 +63,23 @@
 
   function persistWatchlist() {
     saveJSON(LS_WATCHLIST, [...state.watchlist]);
+    syncWatchlistToSupabase();
+  }
+
+  // Best-effort mirror of the local watchlist into Supabase, so a paid
+  // report has something to read server-side. Not required for the
+  // app's core (offline-first, local) watchlist to keep working.
+  async function syncWatchlistToSupabase() {
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const userId = data.session?.user?.id;
+      if (!userId) return;
+      await supabaseClient
+        .from("watchlists")
+        .upsert({ user_id: userId, name: "My Watchlist", hs_codes: [...state.watchlist] }, { onConflict: "user_id" });
+    } catch (e) {
+      /* best effort */
+    }
   }
 
   // ------------------------------------------------------------------
@@ -590,6 +607,38 @@
     }
   }
 
+  async function renderMyReports(userId) {
+    const container = document.getElementById("my-reports");
+    if (!container || !userId) return;
+    try {
+      const { data: purchases, error } = await supabaseClient
+        .from("report_purchases")
+        .select("id, report_type, status, file_path, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (error || !purchases || purchases.length === 0) {
+        container.innerHTML = "";
+        return;
+      }
+      const rows = await Promise.all(
+        purchases.map(async (p) => {
+          const date = new Date(p.created_at).toLocaleDateString();
+          if (p.file_path) {
+            const { data: signed } = await supabaseClient.storage.from("reports").createSignedUrl(p.file_path, 3600);
+            if (signed?.signedUrl) {
+              return `<div class="field-hint">${date} — ${p.report_type}: <a href="${signed.signedUrl}" target="_blank" rel="noopener">Download PDF</a></div>`;
+            }
+          }
+          return `<div class="field-hint">${date} — ${p.report_type}: preparing…</div>`;
+        })
+      );
+      container.innerHTML =
+        `<div class="section-head" style="margin-top:24px;"><h2>My reports</h2></div>` + rows.join("");
+    } catch (e) {
+      /* best effort */
+    }
+  }
+
   function initAccount() {
     document.getElementById("account-send-link").addEventListener("click", () => {
       const email = document.getElementById("account-email").value.trim();
@@ -602,12 +651,20 @@
     // after the person clicks the magic link and lands back here.
     supabaseClient.auth.onAuthStateChange((_event, session) => {
       renderAccountScreen(session);
-      if (session && session.user) linkPushSubscriptionToUser(session.user.id);
+      if (session && session.user) {
+        linkPushSubscriptionToUser(session.user.id);
+        syncWatchlistToSupabase();
+        renderMyReports(session.user.id);
+      }
     });
     // Initial paint, in case a session already exists in this browser.
     supabaseClient.auth.getSession().then(({ data }) => {
       renderAccountScreen(data.session);
-      if (data.session && data.session.user) linkPushSubscriptionToUser(data.session.user.id);
+      if (data.session && data.session.user) {
+        linkPushSubscriptionToUser(data.session.user.id);
+        syncWatchlistToSupabase();
+        renderMyReports(data.session.user.id);
+      }
     });
   }
 
@@ -628,6 +685,13 @@
             : "Checkout cancelled — no charge was made.";
       }
       window.history.replaceState({}, "", window.location.pathname);
+      if (checkoutParam === "success") {
+        setTimeout(() => {
+          supabaseClient.auth.getSession().then(({ data }) => {
+            if (data.session) renderMyReports(data.session.user.id);
+          });
+        }, 4000);
+      }
     }
 
     populateCategoryChips();
