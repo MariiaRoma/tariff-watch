@@ -14,6 +14,7 @@
   const LS_SNAPSHOT = "tw_rate_snapshot_v1";
   const LS_SEEN_VERSION = "tw_seen_data_version_v1";
   const LS_PUSH_ENABLED = "tw_push_enabled_v1";
+  const LS_NOTIFICATION_MODE = "tw_notification_mode_v1";
 
   // Public VAPID key for Web Push (safe to expose client-side by design —
   // it's the "who is this server" half of the key pair, not the secret).
@@ -461,7 +462,11 @@
       await fetch(SUBSCRIBE_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON(), watchlist: [...state.watchlist] }),
+        body: JSON.stringify({
+          subscription: sub.toJSON(),
+          watchlist: [...state.watchlist],
+          notificationMode: loadJSON(LS_NOTIFICATION_MODE, "instant"),
+        }),
       });
     } catch (e) {
       // Best-effort — a failed sync here just means the backend's copy of
@@ -540,6 +545,7 @@
     const strip = document.getElementById("notify-strip");
     const text = document.getElementById("notify-text");
     const btn = document.getElementById("notify-enable-btn");
+    const modeSelect = document.getElementById("notify-mode-select");
     if (!strip || !text || !btn) return;
 
     if (!pushSupported() || sessionStorage.getItem("tw_notify_dismissed")) {
@@ -553,6 +559,10 @@
       btn.textContent = "Turn off";
       btn.dataset.action = "disable";
       strip.classList.add("is-visible");
+      if (modeSelect) {
+        modeSelect.style.display = "inline-block";
+        modeSelect.value = loadJSON(LS_NOTIFICATION_MODE, "instant");
+      }
     } else if (permission === "denied") {
       // Browsers won't let us re-prompt once denied — nagging would just
       // annoy people. They can still re-enable via their browser's site
@@ -563,6 +573,7 @@
       btn.textContent = "Enable";
       btn.dataset.action = "enable";
       strip.classList.add("is-visible");
+      if (modeSelect) modeSelect.style.display = "none";
     } else {
       strip.classList.remove("is-visible");
     }
@@ -1317,6 +1328,10 @@
     document.getElementById("notify-dismiss").addEventListener("click", () => {
       document.getElementById("notify-strip").classList.remove("is-visible");
       sessionStorage.setItem("tw_notify_dismissed", "1");
+    });
+    document.getElementById("notify-mode-select").addEventListener("change", (e) => {
+      saveJSON(LS_NOTIFICATION_MODE, e.target.value);
+      syncPushSubscriptionIfEnabled();
     });
     updateNotifyStrip();
 

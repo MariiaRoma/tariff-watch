@@ -761,3 +761,13 @@ a { color: inherit; }
   color: #234C40 !important;
   padding: 4px !important;
 }
+
+#notify-mode-select {
+  flex: none;
+  border: 1px solid #B9CBBF;
+  background: var(--paper-0);
+  color: #234C40;
+  border-radius: var(--radius-sm);
+  padding: 5px 6px;
+  font-size: 11.5px;
+}
