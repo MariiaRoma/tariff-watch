@@ -547,6 +547,93 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // Shared (team) watchlist
+  // ------------------------------------------------------------------
+  async function shareWatchlist() {
+    const statusEl = document.getElementById("share-watchlist-status");
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        statusEl.textContent = "Sign in first (Account tab) to get a share link for your watchlist.";
+        return;
+      }
+      await syncWatchlistToSupabase(); // make sure the shared copy is current before generating a link
+      const { data: existing } = await supabaseClient
+        .from("watchlists")
+        .select("share_token")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      let token = existing?.share_token;
+      if (!token) {
+        token = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const { error } = await supabaseClient.from("watchlists").update({ share_token: token }).eq("user_id", session.user.id);
+        if (error) throw error;
+      }
+
+      const url = `${window.location.origin}/?share=${token}`;
+      statusEl.innerHTML = `Share link: <a href="${url}">${url}</a> — <a href="#" id="stop-sharing-link">stop sharing</a>`;
+      const stopLink = document.getElementById("stop-sharing-link");
+      if (stopLink) {
+        stopLink.addEventListener("click", async (e) => {
+          e.preventDefault();
+          await supabaseClient.from("watchlists").update({ share_token: null }).eq("user_id", session.user.id);
+          statusEl.textContent = "Sharing turned off.";
+        });
+      }
+    } catch (e) {
+      statusEl.textContent = `Error: ${e.message || "Could not create a share link"}`;
+    }
+  }
+
+  // Checks the URL for ?share=TOKEN on load. If present and valid, shows
+  // a read-only view of that watchlist instead of the normal app — no
+  // login needed, so a colleague can open the link directly.
+  async function checkForSharedView() {
+    const token = new URLSearchParams(window.location.search).get("share");
+    if (!token) return false;
+
+    const sharedRoot = document.getElementById("shared-view");
+    const mainEl = document.getElementById("app-main");
+    const tabBar = document.querySelector(".tab-bar");
+    const notifyStrip = document.getElementById("notify-strip");
+
+    try {
+      const { data: watchlistRow, error } = await supabaseClient
+        .from("watchlists")
+        .select("name, hs_codes")
+        .eq("share_token", token)
+        .maybeSingle();
+
+      if (error || !watchlistRow) {
+        sharedRoot.innerHTML = `
+          <div class="section-head"><h2>Link not found</h2></div>
+          <p class="section-intro">This share link is invalid or sharing was turned off. <a href="/">Open Tariff Watch</a> instead.</p>`;
+      } else {
+        const items = (watchlistRow.hs_codes || []).map(byId).filter(Boolean);
+        const rows = items.length
+          ? `<div class="ledger">${items.map((it) => ledgerRow(it, { showAction: false })).join("")}</div>`
+          : `<div class="ledger-empty"><strong>This watchlist is empty.</strong></div>`;
+        sharedRoot.innerHTML = `
+          <div class="section-head"><h2>${escapeHtml(watchlistRow.name || "Shared watchlist")}</h2></div>
+          <p class="section-intro">A read-only, shared view — ${items.length} code${items.length === 1 ? "" : "s"} tracked. <a href="/">Open Tariff Watch</a> to track your own.</p>
+          ${rows}`;
+      }
+    } catch (e) {
+      sharedRoot.innerHTML = `
+        <div class="section-head"><h2>Something went wrong</h2></div>
+        <p class="section-intro">Couldn't load this shared watchlist right now. <a href="/">Open Tariff Watch</a> instead.</p>`;
+    }
+
+    if (mainEl) mainEl.style.display = "none";
+    if (tabBar) tabBar.style.display = "none";
+    if (notifyStrip) notifyStrip.classList.remove("is-visible");
+    sharedRoot.style.display = "block";
+    return true;
+  }
+
   function renderCalc() {
     const s = calcState();
     const out = document.getElementById("calc-result");
@@ -1360,6 +1447,7 @@
     document.getElementById("save-brand-settings").addEventListener("click", saveBrandSettings);
     document.getElementById("manage-subscription").addEventListener("click", manageSubscription);
     document.getElementById("sku-add-btn").addEventListener("click", addSkuMapping);
+    document.getElementById("share-watchlist-btn").addEventListener("click", shareWatchlist);
 
     // Fires on sign-in, sign-out, and token refresh — including right
     // after the person clicks the magic link and lands back here.
@@ -1386,7 +1474,14 @@
     });
   }
 
-  function init() {
+  async function init() {
+    // A shared-watchlist link (?share=TOKEN) shows a read-only view
+    // instead of the normal app. Still let the rest of init() run
+    // afterward (sheet open/close, etc.) — those handlers are what make
+    // the read-only rows clickable, and they're harmless no-ops for
+    // everything else that stays hidden behind it.
+    await checkForSharedView();
+
     // header sync line
     document.getElementById("data-sync-line").textContent = `Sample data as of ${DATA_LAST_SYNCED}`;
 

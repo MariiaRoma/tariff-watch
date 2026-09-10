@@ -72,6 +72,8 @@
         <span class="section-head__meta" id="watchlist-count"></span>
       </div>
       <p class="section-intro">Codes you're tracking. Tariff Watch flags anything that has moved since the rate was added, and (once installed) checks again each time you open the app.</p>
+      <button type="button" class="bulk-lookup-toggle" id="share-watchlist-btn">Share with your team ▸</button>
+      <p class="field-hint" id="share-watchlist-status"></p>
       <div id="watchlist-list"></div>
 
       <div class="section-head" style="margin-top:28px;">
@@ -338,6 +340,9 @@
     </section>
 
   </main>
+
+  <!-- ============================ SHARED WATCHLIST VIEW ======================== -->
+  <div id="shared-view" style="display:none;"></div>
 
   <!-- =============================== DETAIL SHEET ============================= -->
   <div class="sheet-backdrop" id="sheet-backdrop"></div>
