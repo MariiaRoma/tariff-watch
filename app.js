@@ -597,7 +597,7 @@
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ priceId: PRICE_EXPOSURE_REPORT }),
+        body: JSON.stringify({ priceId: PRICE_EXPOSURE_REPORT, product: "exposure_pdf" }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.url) {
