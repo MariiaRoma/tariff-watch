@@ -40,16 +40,19 @@ jobs:
           NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
         run: python3 scripts/sync_data.py
 
+      - name: Generate "most volatile codes" page
+        run: python3 scripts/generate_volatile_page.py
+
       - name: Commit updated data if changed
         id: commit
         run: |
           git config user.name "tariff-watch-sync-bot"
           git config user.email "actions@users.noreply.github.com"
-          if git diff --quiet -- data.js data.json; then
+          if git diff --quiet -- data.js data.json volatile.html; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No data changes to commit."
           else
-            git add data.js data.json
+            git add data.js data.json volatile.html
             git commit -m "chore: sync tariff data ($(date -u +%Y-%m-%d))"
             # Someone (or another run) may have pushed to main since this
             # job's checkout — rebase onto the latest before pushing so a
