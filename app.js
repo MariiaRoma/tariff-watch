@@ -464,6 +464,89 @@
       .join("");
   }
 
+  // ------------------------------------------------------------------
+  // SKU → HS code mapping
+  // ------------------------------------------------------------------
+  async function addSkuMapping() {
+    const statusEl = document.getElementById("sku-status");
+    const skuInput = document.getElementById("sku-input");
+    const hsInput = document.getElementById("sku-hs-input");
+    const sku = skuInput.value.trim();
+    const hsRaw = hsInput.value.trim();
+
+    if (!sku || !hsRaw) {
+      statusEl.textContent = "Enter both a SKU/name and an HS code.";
+      return;
+    }
+    const matched = findTariffByLooseCode(hsRaw);
+    if (!matched) {
+      statusEl.textContent = `"${hsRaw}" doesn't match any code in the database — check the format and try again.`;
+      return;
+    }
+
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        statusEl.textContent = "Please sign in first.";
+        return;
+      }
+      const { error } = await supabaseClient.from("sku_mappings").insert({
+        user_id: session.user.id,
+        sku,
+        hs_code: matched.id,
+      });
+      if (error) throw error;
+      skuInput.value = "";
+      hsInput.value = "";
+      statusEl.textContent = "Added.";
+      renderSkuMappings(session.user.id);
+    } catch (e) {
+      statusEl.textContent = `Error: ${e.message || "Could not save mapping"}`;
+    }
+  }
+
+  async function deleteSkuMapping(id, userId) {
+    try {
+      await supabaseClient.from("sku_mappings").delete().eq("id", id);
+      renderSkuMappings(userId);
+    } catch (e) {
+      /* best effort */
+    }
+  }
+
+  async function renderSkuMappings(userId) {
+    const root = document.getElementById("sku-mappings-list");
+    if (!root || !userId) return;
+    try {
+      const { data: mappings, error } = await supabaseClient
+        .from("sku_mappings")
+        .select("id, sku, hs_code")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (error || !mappings || mappings.length === 0) {
+        root.innerHTML = "";
+        return;
+      }
+      root.innerHTML = mappings
+        .map((m) => {
+          const item = byId(m.hs_code);
+          const hsLabel = item ? `${item.hs} — ${item.desc}` : m.hs_code;
+          return `
+          <div class="scenario-row">
+            <div class="scenario-row__info" ${item ? `data-open="${item.id}"` : ""}>
+              <div class="scenario-row__name">${escapeHtml(m.sku)}</div>
+              <div class="scenario-row__meta">${escapeHtml(hsLabel)}</div>
+            </div>
+            <button type="button" class="scenario-row__delete" data-sku-delete="${m.id}" aria-label="Delete">✕</button>
+          </div>`;
+        })
+        .join("");
+    } catch (e) {
+      /* best effort */
+    }
+  }
+
   function renderCalc() {
     const s = calcState();
     const out = document.getElementById("calc-result");
@@ -1276,6 +1359,7 @@
     document.getElementById("subscribe-white-label").addEventListener("click", subscribeWhiteLabel);
     document.getElementById("save-brand-settings").addEventListener("click", saveBrandSettings);
     document.getElementById("manage-subscription").addEventListener("click", manageSubscription);
+    document.getElementById("sku-add-btn").addEventListener("click", addSkuMapping);
 
     // Fires on sign-in, sign-out, and token refresh — including right
     // after the person clicks the magic link and lands back here.
@@ -1286,6 +1370,7 @@
         syncWatchlistToSupabase();
         renderMyReports(session.user.id);
         refreshSubscriptionUI(session.user.id);
+        renderSkuMappings(session.user.id);
       }
     });
     // Initial paint, in case a session already exists in this browser.
@@ -1296,6 +1381,7 @@
         syncWatchlistToSupabase();
         renderMyReports(data.session.user.id);
         refreshSubscriptionUI(data.session.user.id);
+        renderSkuMappings(data.session.user.id);
       }
     });
   }
@@ -1365,6 +1451,13 @@
       const deleteEl = e.target.closest("[data-scenario-delete]");
       if (deleteEl) {
         deleteScenario(deleteEl.dataset.scenarioDelete);
+        return;
+      }
+      const skuDeleteEl = e.target.closest("[data-sku-delete]");
+      if (skuDeleteEl) {
+        supabaseClient.auth.getSession().then(({ data }) => {
+          if (data.session) deleteSkuMapping(skuDeleteEl.dataset.skuDelete, data.session.user.id);
+        });
         return;
       }
       const rowEl = e.target.closest("[data-open]");

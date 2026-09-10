@@ -314,6 +314,25 @@
           <p class="field-hint" id="brand-status"></p>
         </div>
 
+        <div class="section-head" style="margin-top:24px;">
+          <h2>Your Product Codes</h2>
+        </div>
+        <p class="section-intro">Map your own SKUs or product names to HS codes, so you can find and track them by a name you actually use.</p>
+        <div class="calc-form">
+          <div class="field">
+            <label for="sku-input">Your SKU or product name</label>
+            <input type="text" id="sku-input" placeholder="e.g. SOFA-GRY-3S or “Grey 3-seat sofa”">
+          </div>
+          <div class="field">
+            <label for="sku-hs-input">HS code</label>
+            <input type="text" id="sku-hs-input" placeholder="e.g. 9403.20.00">
+            <span class="field-hint">Must match a code in the Tariff Watch database.</span>
+          </div>
+          <button class="btn btn--full" id="sku-add-btn" type="button">Add mapping</button>
+        </div>
+        <p class="field-hint" id="sku-status"></p>
+        <div id="sku-mappings-list"></div>
+
         <div id="my-reports"></div>
       </div>
     </section>
