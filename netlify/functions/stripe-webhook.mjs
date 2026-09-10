@@ -281,16 +281,19 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
   y -= 16;
 
   let rowIndex = 0;
+  let anyMatchedViaParent = false;
   for (const row of computed) {
     ensureSpace(ROW_HEIGHT);
     if (rowIndex % 2 === 0) {
       page.drawRectangle({ x: MARGIN, y: y - 5, width: PAGE_SIZE[0] - 2 * MARGIN, height: ROW_HEIGHT, color: ZEBRA });
     }
     if (!row.matched) {
-      page.drawText(sanitizeForPdf(row.hs_code), { x: MARGIN + 6, y, size: 8, font, color: RATE_UP });
+      page.drawText(sanitizeForPdf(row.original_input || row.hs_code), { x: MARGIN + 6, y, size: 8, font, color: RATE_UP });
       page.drawText("HS code not found in database", { x: MARGIN + 95, y, size: 8, font, color: RATE_UP });
     } else {
-      page.drawText(row.item.hs || row.hs_code, { x: MARGIN + 6, y, size: 8, font, color: INK });
+      const codeLabel = row.matched_via_parent ? `${row.item.hs} *` : row.item.hs;
+      if (row.matched_via_parent) anyMatchedViaParent = true;
+      page.drawText(codeLabel, { x: MARGIN + 6, y, size: 8, font, color: INK });
       page.drawText(String(row.quantity), { x: MARGIN + 95, y, size: 8, font, color: INK });
       page.drawText(`$${Number(row.unit_value).toFixed(2)}`, { x: MARGIN + 140, y, size: 8, font, color: INK });
       page.drawText(`$${row.value.toFixed(2)}`, { x: MARGIN + 215, y, size: 8, font, color: INK });
@@ -299,6 +302,15 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
     }
     y -= ROW_HEIGHT;
     rowIndex++;
+  }
+
+  if (anyMatchedViaParent) {
+    ensureSpace(ROW_HEIGHT);
+    page.drawText(
+      "* Exact code not separately listed — rate inherited from the parent tariff item (see original code on your source file).",
+      { x: MARGIN, y, size: 7, font, color: GRAY }
+    );
+    y -= ROW_HEIGHT;
   }
 
   const total = pages.length;
