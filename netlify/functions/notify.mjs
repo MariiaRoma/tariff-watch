@@ -57,7 +57,9 @@ export default async (req) => {
 
       const watched = new Set(record.watchlist || []);
       const relevant = changes.filter((c) => watched.has(c.id));
-      if (relevant.length === 0) {
+      // Weekly-digest subscribers get summarized by the separate
+      // send-digest function instead of an instant push per change.
+      if (relevant.length === 0 || record.notificationMode === "weekly") {
         skipped++;
         return;
       }
