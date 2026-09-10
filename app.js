@@ -541,6 +541,31 @@
     updateNotifyStrip();
   }
 
+  async function changeNotificationMode(mode) {
+    saveJSON(LS_NOTIFICATION_MODE, mode);
+    if (!pushSupported() || Notification.permission !== "granted") return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        // Local state says push is on, but the browser doesn't actually
+        // have a live subscription right now (can happen after a stale
+        // reload, or if it silently expired) — recreate it so there's
+        // something for this setting to attach to, instead of quietly
+        // doing nothing and leaving the old server-side record unchanged.
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+      }
+      await postSubscription(sub);
+    } catch (e) {
+      const modeSelect = document.getElementById("notify-mode-select");
+      if (modeSelect) modeSelect.value = mode === "weekly" ? "instant" : "weekly"; // revert the visible choice
+      window.alert("Couldn't update notification frequency — please try again, or turn notifications off and back on.");
+    }
+  }
+
   function updateNotifyStrip() {
     const strip = document.getElementById("notify-strip");
     const text = document.getElementById("notify-text");
@@ -1330,8 +1355,7 @@
       sessionStorage.setItem("tw_notify_dismissed", "1");
     });
     document.getElementById("notify-mode-select").addEventListener("change", (e) => {
-      saveJSON(LS_NOTIFICATION_MODE, e.target.value);
-      syncPushSubscriptionIfEnabled();
+      changeNotificationMode(e.target.value);
     });
     updateNotifyStrip();
 

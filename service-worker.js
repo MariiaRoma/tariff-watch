@@ -6,7 +6,7 @@
  * returning visitors pick up the new version instead of a stale cache.
  */
 
-const CACHE_NAME = "tariff-watch-v2026-09-09i";
+const CACHE_NAME = "tariff-watch-v2026-09-09j";
 const APP_SHELL = [
   "./",
   "./index.html",
