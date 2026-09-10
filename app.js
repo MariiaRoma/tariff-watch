@@ -328,12 +328,19 @@
     document.getElementById("sheet-title").textContent = item.desc;
     document.getElementById("sheet-hs").textContent = `${item.hs} · ${directionLabel(item.direction)}`;
 
+    const sourceUrl =
+      item.direction === "us_to_ca"
+        ? "https://www.canada.ca/en/department-finance/programs/international-trade-finance-policy/canadas-response-us-tariffs/complete-list-us-products-subject-to-counter-tariffs.html"
+        : "https://hts.usitc.gov";
+    const sourceLabel = item.direction === "us_to_ca" ? "Finance Canada" : "USITC";
+
     const rows = [
       ["Current rate", `${item.rate}%`],
       ["Category", item.category],
       ["Effective", dateFmt(item.changeDate || item.effectiveDate)],
       ["Legal basis", item.legalBasis],
       ["Data confidence", item.verified ? "From official published list" : "Representative sample — confirm exact HS line"],
+      ["Last verified", `${DATA_LAST_SYNCED} · <a href="${sourceUrl}" target="_blank" rel="noopener">${sourceLabel} source ↗</a>`],
     ];
     document.getElementById("sheet-rows").innerHTML = rows
       .map(([k, v]) => `<div class="sheet__row"><dt>${k}</dt><dd>${v}</dd></div>`)
