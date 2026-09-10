@@ -146,6 +146,43 @@
   // ------------------------------------------------------------------
   // Watchlist screen
   // ------------------------------------------------------------------
+  // A manually-curated table of announced-but-not-yet-effective rate
+  // changes (our scraper only captures the current state, not future
+  // announcements) — shown only when it matches something the person is
+  // actually tracking, so it reads as relevant urgency, not spam.
+  async function loadUpcomingChanges() {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data, error } = await supabaseClient
+        .from("upcoming_changes")
+        .select("hs_id, new_rate, effective_date, note")
+        .gte("effective_date", today)
+        .order("effective_date", { ascending: true });
+      if (error || !data) return [];
+      return data;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function renderUpcomingBanner() {
+    const root = document.getElementById("upcoming-banner");
+    if (!root) return;
+    const upcoming = await loadUpcomingChanges();
+    const relevant = upcoming.filter((u) => state.watchlist.has(u.hs_id));
+    if (relevant.length === 0) {
+      root.innerHTML = "";
+      return;
+    }
+    const next = relevant[0]; // soonest, thanks to the ascending sort above
+    const item = byId(next.hs_id);
+    const daysLeft = Math.max(0, Math.ceil((new Date(next.effective_date) - new Date()) / (1000 * 60 * 60 * 24)));
+    root.innerHTML = `
+      <div class="countdown-banner">
+        <strong>${daysLeft} day${daysLeft === 1 ? "" : "s"} left</strong> — ${escapeHtml(item ? item.hs : next.hs_id)} rises to ${next.new_rate}% on ${dateFmt(next.effective_date)}.${next.note ? ` ${escapeHtml(next.note)}` : ""}
+      </div>`;
+  }
+
   // A small, diverse starter set for the empty-watchlist state — one
   // item from each of a few different categories, so a first-time
   // visitor has something concrete to tap instead of a blank list and
@@ -501,6 +538,7 @@
     renderWatchlist();
     renderSearch();
     renderRecentChanges();
+    renderUpcomingBanner();
     updateNotifyStrip();
     syncPushSubscriptionIfEnabled();
     if (state.sheetItemId === id) openSheet(id); // refresh sheet button label
@@ -1669,6 +1707,7 @@
     renderSearch();
     renderRecentChanges();
     renderScenariosList();
+    renderUpcomingBanner();
     checkForChangesSinceLastVisit();
 
     // Tab bar

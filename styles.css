@@ -859,3 +859,18 @@ a { color: inherit; }
   padding: 4px 6px;
   cursor: pointer;
 }
+
+.countdown-banner {
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+  background: #FBEFE7;
+  border: 1px solid #E8B98F;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #6E2E1E;
+  line-height: 1.5;
+}
+
+.countdown-banner strong {
+  color: var(--rust);
+}
