@@ -620,6 +620,33 @@ a { color: inherit; }
 .sheet__row dt { color: var(--ink-soft); flex: none; }
 .sheet__row dd { margin: 0; text-align: right; }
 
+.sheet__history {
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--paper-1);
+  border-radius: var(--radius-sm);
+}
+
+.sheet__history h4 {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.sheet__history .field {
+  margin-top: 8px;
+}
+
+.sheet__history input[type="date"] {
+  border: 1px solid var(--line-strong);
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
 .sheet__source-note {
   margin-top: 14px;
   font-size: 12px;

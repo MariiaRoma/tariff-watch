@@ -352,6 +352,104 @@
   // ------------------------------------------------------------------
   // Detail sheet
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Rate history (mini chart + compare-on-a-date)
+  // ------------------------------------------------------------------
+  async function loadRateHistory(itemId) {
+    try {
+      const { data, error } = await supabaseClient
+        .from("rate_history")
+        .select("rate, recorded_date")
+        .eq("hs_id", itemId)
+        .order("recorded_date", { ascending: true });
+      if (error || !data) return [];
+      return data;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function buildHistorySvg(history) {
+    const width = 280;
+    const height = 70;
+    const padding = 10;
+    const rates = history.map((h) => Number(h.rate));
+    const minRate = Math.min(...rates);
+    const maxRate = Math.max(...rates);
+    const range = maxRate - minRate || 1;
+    const stepX = history.length > 1 ? (width - 2 * padding) / (history.length - 1) : 0;
+
+    const points = history.map((h, i) => {
+      const x = padding + i * stepX;
+      const y = height - padding - ((Number(h.rate) - minRate) / range) * (height - 2 * padding);
+      return { x, y };
+    });
+
+    const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    const dots = points
+      .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="#223349"></circle>`)
+      .join("");
+
+    return `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="Rate history chart">
+      <path d="${path}" fill="none" stroke="#223349" stroke-width="2"></path>
+      ${dots}
+    </svg>`;
+  }
+
+  function findRateOnOrBefore(history, dateStr) {
+    // history is sorted ascending — walk backward for the most recent
+    // entry that's on or before the chosen date.
+    let match = null;
+    for (const h of history) {
+      if (h.recorded_date <= dateStr) match = h;
+      else break;
+    }
+    return match;
+  }
+
+  async function renderSheetHistory(item) {
+    const root = document.getElementById("sheet-history");
+    if (!root) return;
+    root.innerHTML = `<p class="field-hint">Loading history…</p>`;
+    const history = await loadRateHistory(item.id);
+
+    // Only render if this is still the open item — the person may have
+    // already clicked a different row while this was loading.
+    if (state.sheetItemId !== item.id) return;
+
+    if (history.length < 2) {
+      root.innerHTML = `
+        <div class="sheet__history">
+          <h4>Rate history</h4>
+          <p class="field-hint">Tracking starts today — check back as changes get recorded over time.</p>
+        </div>`;
+      return;
+    }
+
+    const earliest = history[0].recorded_date;
+    root.innerHTML = `
+      <div class="sheet__history">
+        <h4>Rate history</h4>
+        ${buildHistorySvg(history)}
+        <div class="field" style="margin-top:8px;">
+          <label for="sheet-history-date">Compare rate on a date</label>
+          <input type="date" id="sheet-history-date" min="${earliest}" max="${new Date().toISOString().slice(0, 10)}" value="${earliest}">
+        </div>
+        <p class="field-hint" id="sheet-history-compare"></p>
+      </div>`;
+
+    const dateInput = document.getElementById("sheet-history-date");
+    const compareEl = document.getElementById("sheet-history-compare");
+    const updateCompare = () => {
+      const picked = findRateOnOrBefore(history, dateInput.value);
+      compareEl.textContent = picked
+        ? `On ${dateFmt(picked.recorded_date)}: ${picked.rate}%  →  Now: ${item.rate}%`
+        : `No recorded rate on or before that date — tracking starts ${dateFmt(earliest)}.`;
+    };
+    dateInput.addEventListener("change", updateCompare);
+    updateCompare();
+  }
+
   function openSheet(id) {
     const item = byId(id);
     if (!item) return;
@@ -386,6 +484,8 @@
 
     document.getElementById("sheet-backdrop").classList.add("is-open");
     document.getElementById("sheet").classList.add("is-open");
+
+    renderSheetHistory(item);
   }
 
   function closeSheet() {
