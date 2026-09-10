@@ -1192,6 +1192,13 @@
 
     initAccount();
     document.getElementById("bulk-lookup-btn").addEventListener("click", runBulkLookup);
+    document.getElementById("bulk-lookup-toggle").addEventListener("click", () => {
+      const panel = document.getElementById("bulk-lookup-panel");
+      const toggle = document.getElementById("bulk-lookup-toggle");
+      const isOpen = panel.style.display !== "none";
+      panel.style.display = isOpen ? "none" : "block";
+      toggle.textContent = isOpen ? "Look up multiple codes at once ▾" : "Look up multiple codes at once ▴";
+    });
 
     // Delegate ledger row / action clicks (watchlist + search screens)
     document.body.addEventListener("click", (e) => {
