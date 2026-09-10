@@ -70,10 +70,11 @@ export default async (req) => {
 
   const stripe = new Stripe(STRIPE_SECRET_KEY);
   const origin = req.headers.get("origin") || new URL(req.url).origin;
+  const mode = product === "white_label" ? "subscription" : "payment";
 
   try {
     const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+      mode,
       line_items: [{ price: priceId, quantity: 1 }],
       // Ties the Stripe session to our own user id so the webhook knows
       // whose transaction/profile to update.
