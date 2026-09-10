@@ -310,15 +310,25 @@
       );
     });
 
-    document.getElementById("search-count").textContent = `${results.length} of ${TARIFF_DATA.length} sample entries`;
+    document.getElementById("search-count").textContent = `${results.length} of ${TARIFF_DATA.length} entries`;
 
     if (!results.length) {
+      // If the query looks like an HS code but didn't match anything
+      // literally, try the same parent-code fallback used elsewhere —
+      // a finer code (e.g. a 10-digit statistical suffix) not listed on
+      // its own usually inherits its parent tariff item's rate.
+      const digitsInQuery = q.replace(/[^0-9]/g, "");
+      const fallbackMatch = digitsInQuery.length >= 4 ? findTariffByLooseCode(state.search.q) : null;
+      if (fallbackMatch) {
+        root.innerHTML = `
+          <p class="field-hint" style="padding:0 20px 6px;">No exact listing for "${escapeHtml(state.search.q.trim())}" — closest official match (rate inherited from the parent tariff item):</p>
+          <div class="ledger">${ledgerRow(fallbackMatch, { showAction: true })}</div>`;
+        return;
+      }
       root.innerHTML = `
         <div class="ledger-empty">
-          <strong>No matches in this sample</strong>
-          This MVP ships a curated ~75-line sample, not the full 874-item
-          CBSA/USITC schedules. Try a broader term, or see the About tab
-          for how a production build would sync the complete tariff data.
+          <strong>No matches</strong>
+          Try a broader term, or a shorter HS-code prefix (e.g. "9403.60" instead of a full 10-digit code).
         </div>`;
       return;
     }
@@ -336,17 +346,31 @@
 
   // Matches loosely — the person might paste our internal id
   // ("ca-0402-10-20"), the plain HS number ("0402.10.20"), or the same
-  // digits with different punctuation/spacing ("0402 10 20").
+  // digits with different punctuation/spacing ("0402 10 20"). If none of
+  // that matches, HS codes are hierarchical (chapter.heading.subheading.
+  // tariff-item[.stat-suffix]) — official schedules often only publish a
+  // rate at the 8-digit tariff-item level, and a finer code (e.g. a
+  // 10-digit statistical suffix) inherits that parent's rate. So fall
+  // back to progressively shorter prefixes, but never below 6 digits
+  // (subheading) — rates genuinely differ within a 4-digit heading, and
+  // guessing that coarsely risks returning a wrong number.
   function findTariffByLooseCode(raw) {
-    const clean = raw.trim();
+    const clean = String(raw || "").trim();
     if (!clean) return null;
     let found = TARIFF_DATA.find((d) => d.id.toLowerCase() === clean.toLowerCase());
     if (found) return found;
     found = TARIFF_DATA.find((d) => d.hs.toLowerCase() === clean.toLowerCase());
     if (found) return found;
     const digitsOnly = clean.replace(/[^0-9]/g, "");
-    if (digitsOnly) {
-      found = TARIFF_DATA.find((d) => d.hs.replace(/[^0-9]/g, "") === digitsOnly);
+    if (!digitsOnly) return null;
+    found = TARIFF_DATA.find((d) => d.hs.replace(/[^0-9]/g, "") === digitsOnly);
+    if (found) return found;
+    if (digitsOnly.length > 8) {
+      found = TARIFF_DATA.find((d) => d.hs.replace(/[^0-9]/g, "") === digitsOnly.slice(0, 8));
+      if (found) return found;
+    }
+    if (digitsOnly.length > 6) {
+      found = TARIFF_DATA.find((d) => d.hs.replace(/[^0-9]/g, "") === digitsOnly.slice(0, 6));
       if (found) return found;
     }
     return null;
@@ -1446,16 +1470,29 @@
     const previewEl = document.getElementById("bulk-preview");
     const buyBtn = document.getElementById("buy-bulk-calc");
     const rows = rawRows
-      .map((r) => ({
-        hs_code: String(r.hs_code ?? "").trim(),
-        quantity: parseFloat(r.quantity),
-        unit_value: parseFloat(r.unit_value),
-        freight: parseFloat(r.freight) || 0,
-        insurance: parseFloat(r.insurance) || 0,
-      }))
-      .filter((r) => r.hs_code && !isNaN(r.quantity) && !isNaN(r.unit_value));
+      .map((r) => {
+        const rawCode = String(r.hs_code ?? "").trim();
+        const matched = findTariffByLooseCode(rawCode);
+        const rawDigits = rawCode.replace(/[^0-9]/g, "");
+        // True when we only found a match by climbing up to a shorter
+        // (parent) HS prefix — worth flagging, since the rate technically
+        // belongs to the broader tariff item, not the exact code typed.
+        const matchedViaParent = !!(matched && rawDigits && matched.hs.replace(/[^0-9]/g, "") !== rawDigits);
+        return {
+          hs_code: matched ? matched.id : rawCode,
+          original_input: rawCode,
+          matched_via_parent: matchedViaParent,
+          quantity: parseFloat(r.quantity),
+          unit_value: parseFloat(r.unit_value),
+          freight: parseFloat(r.freight) || 0,
+          insurance: parseFloat(r.insurance) || 0,
+        };
+      })
+      .filter((r) => r.original_input && !isNaN(r.quantity) && !isNaN(r.unit_value));
 
-    const matched = rows.filter((r) => byId(r.hs_code)).length;
+    const matchedRows = rows.filter((r) => byId(r.hs_code));
+    const matched = matchedRows.length;
+    const viaParent = matchedRows.filter((r) => r.matched_via_parent).length;
     const skipped = rawRows.length - rows.length;
     bulkParsedRows = rows;
 
@@ -1465,8 +1502,8 @@
       return;
     }
     previewEl.innerHTML = `<p class="field-hint">${rows.length} row(s) ready · ${matched} match known HS codes${
-      skipped ? ` · ${skipped} row(s) skipped (missing data)` : ""
-    }</p>`;
+      viaParent ? ` (${viaParent} via parent tariff item)` : ""
+    }${skipped ? ` · ${skipped} row(s) skipped (missing data)` : ""}</p>`;
     buyBtn.style.display = "block";
   }
 
