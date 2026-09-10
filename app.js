@@ -169,17 +169,21 @@
     const root = document.getElementById("upcoming-banner");
     if (!root) return;
     const upcoming = await loadUpcomingChanges();
-    const relevant = upcoming.filter((u) => state.watchlist.has(u.hs_id));
+    // hs_id in the table might be entered as either our internal id
+    // ("ca-7208-10-00") or the plain HS number ("7208.10.00") — the same
+    // flexible lookup used for CSV/SKU input, so either works.
+    const relevant = upcoming
+      .map((u) => ({ ...u, item: findTariffByLooseCode(u.hs_id) }))
+      .filter((u) => u.item && state.watchlist.has(u.item.id));
     if (relevant.length === 0) {
       root.innerHTML = "";
       return;
     }
     const next = relevant[0]; // soonest, thanks to the ascending sort above
-    const item = byId(next.hs_id);
     const daysLeft = Math.max(0, Math.ceil((new Date(next.effective_date) - new Date()) / (1000 * 60 * 60 * 24)));
     root.innerHTML = `
       <div class="countdown-banner">
-        <strong>${daysLeft} day${daysLeft === 1 ? "" : "s"} left</strong> — ${escapeHtml(item ? item.hs : next.hs_id)} rises to ${next.new_rate}% on ${dateFmt(next.effective_date)}.${next.note ? ` ${escapeHtml(next.note)}` : ""}
+        <strong>${daysLeft} day${daysLeft === 1 ? "" : "s"} left</strong> — ${escapeHtml(next.item.hs)} rises to ${next.new_rate}% on ${dateFmt(next.effective_date)}.${next.note ? ` ${escapeHtml(next.note)}` : ""}
       </div>`;
   }
 
