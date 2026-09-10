@@ -192,12 +192,30 @@
   // ------------------------------------------------------------------
   function populateCategoryChips() {
     const wrap = document.getElementById("search-categories");
+    const dir = state.search.direction;
+    const q = state.search.q.trim().toLowerCase();
+
+    // Counts reflect whatever direction/text filter is already active, so
+    // a chip's number always answers "how many results if I tap this?" —
+    // not just a static total that ignores what's currently on screen.
+    const matchesFilters = (item) => {
+      if (dir !== "all" && item.direction !== dir) return false;
+      if (!q) return true;
+      return (
+        item.hs.toLowerCase().includes(q) ||
+        item.desc.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q)
+      );
+    };
+
+    const totalCount = TARIFF_DATA.filter(matchesFilters).length;
     const chips = ["all", ...ALL_CATEGORIES];
     wrap.innerHTML = chips
-      .map(
-        (c) =>
-          `<button class="chip ${state.search.category === c ? "is-active" : ""}" data-cat="${c}">${c === "all" ? "All categories" : c}</button>`
-      )
+      .map((c) => {
+        const count = c === "all" ? totalCount : TARIFF_DATA.filter((item) => item.category === c && matchesFilters(item)).length;
+        const label = c === "all" ? `All categories (${totalCount})` : `${c} (${count})`;
+        return `<button class="chip ${state.search.category === c ? "is-active" : ""}" data-cat="${c}">${label}</button>`;
+      })
       .join("");
   }
 
@@ -1229,6 +1247,7 @@
     document.getElementById("search-input").addEventListener("input", (e) => {
       state.search.q = e.target.value;
       renderSearch();
+      populateCategoryChips();
     });
     document.querySelectorAll(".search-direction .chip").forEach((chip) => {
       chip.addEventListener("click", () => {
@@ -1236,6 +1255,7 @@
         chip.classList.add("is-active");
         state.search.direction = chip.dataset.dir;
         renderSearch();
+        populateCategoryChips();
       });
     });
     document.getElementById("search-categories").addEventListener("click", (e) => {
