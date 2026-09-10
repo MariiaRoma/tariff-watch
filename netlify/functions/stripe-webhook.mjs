@@ -256,36 +256,11 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
   return pdfDoc.save();
 }
 
-export default async (req) => {
-  if (req.method !== "POST") {
-    return jsonResponse({ error: "Method not allowed" }, { status: 405 });
-  }
-
-  const { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY } = process.env;
-  if (!STRIPE_SECRET_KEY || !STRIPE_WEBHOOK_SECRET || !SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-    return jsonResponse({ error: "Server missing required env vars" }, { status: 500 });
-  }
-
-  const stripe = new Stripe(STRIPE_SECRET_KEY);
-  const signature = req.headers.get("stripe-signature");
-  // Signature verification needs the exact raw bytes Stripe signed —
-  // reading as text here, never JSON.parse before this check.
-  const rawBody = await req.text();
-
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    return jsonResponse({ error: `Webhook signature verification failed: ${err.message}` }, { status: 400 });
-  }
-
-  if (event.type !== "checkout.session.completed") {
-    // Only subscribed to this one event type in Stripe, but ignoring
-    // anything else keeps this handler safe if more get added later.
-    return jsonResponse({ ok: true, ignored: event.type });
-  }
-
-  const session = event.data.object;
+// A one-time purchase (Exposure Report or Bulk Calculator) — records the
+// transaction, grants the report_purchases entitlement, and generates
+// the PDF. This is exactly the logic that existed before subscriptions
+// were added; only the routing above it changed.
+async function handleOneTimePayment(supabase, session) {
   const userId = session.client_reference_id;
   const product = session.metadata?.product || "unknown";
   const paymentIntentId =
@@ -295,11 +270,6 @@ export default async (req) => {
     // Nothing sensible to record — acknowledge so Stripe doesn't retry forever.
     return jsonResponse({ ok: true, note: "Missing client_reference_id or payment_intent" });
   }
-
-  // Uses the secret key (not a user's JWT — Stripe is calling us, not a
-  // signed-in browser) so it can write on behalf of any user, bypassing
-  // RLS by design for this one trusted, signature-verified backend job.
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
   // Idempotency: Stripe retries webhooks on any non-2xx response or
   // timeout, so the same event can legitimately arrive more than once.
@@ -351,6 +321,16 @@ export default async (req) => {
   // can re-run report generation later rather than losing the sale.
   try {
     let pdfBytes;
+    let brand = null;
+    const { data: profileRow } = await supabase
+      .from("profiles")
+      .select("subscription_status")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileRow?.subscription_status === "active") {
+      const { data: brandRow } = await supabase.from("brand_settings").select("*").eq("user_id", userId).maybeSingle();
+      if (brandRow) brand = brandRow;
+    }
 
     if (product === "bulk_calc") {
       const bulkCalcId = session.metadata?.bulk_calc_id || null;
@@ -366,6 +346,7 @@ export default async (req) => {
         direction: bulkRow.direction,
         oceanFreight: bulkRow.ocean_freight,
         rows: bulkRow.rows || [],
+        brand,
       });
     } else {
       // exposure_pdf (default/fallback for any future product without
@@ -388,6 +369,7 @@ export default async (req) => {
         watchlistName,
         generatedAt: new Date().toISOString().slice(0, 10),
         items,
+        brand,
       });
     }
 
@@ -412,4 +394,99 @@ export default async (req) => {
   }
 
   return jsonResponse({ ok: true, transactionId: transaction.id });
+}
+
+// A White-Label subscription checkout completing for the first time —
+// mark the profile active and remember the Stripe customer id, so later
+// customer.subscription.* events (which only carry a customer id, not
+// our own user id) can find their way back to the right profile row.
+async function handleSubscriptionCheckout(supabase, session) {
+  const userId = session.client_reference_id;
+  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+  if (!userId) {
+    return jsonResponse({ ok: true, note: "Missing client_reference_id on subscription checkout" });
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ subscription_status: "active", stripe_customer_id: customerId || null })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("Failed to activate subscription:", error.message);
+    return jsonResponse({ error: `Failed to activate subscription: ${error.message}` }, { status: 500 });
+  }
+  return jsonResponse({ ok: true, note: "Subscription activated" });
+}
+
+// Renewals, cancellations, and payment-failure status changes on an
+// existing subscription. Looked up by stripe_customer_id since these
+// events carry a Stripe Subscription object, not our own user id.
+async function handleSubscriptionStatusChange(supabase, subscription, eventType) {
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+  if (!customerId) {
+    return jsonResponse({ ok: true, note: "Missing customer id on subscription event" });
+  }
+
+  let newStatus = "free";
+  if (eventType === "customer.subscription.updated") {
+    if (subscription.status === "active" || subscription.status === "trialing") newStatus = "active";
+    else if (subscription.status === "past_due" || subscription.status === "unpaid") newStatus = "past_due";
+    else newStatus = "free";
+  }
+  // "deleted" events mean the subscription is fully gone, regardless of
+  // whatever status field it still carries — always falls back to "free".
+
+  const { error } = await supabase.from("profiles").update({ subscription_status: newStatus }).eq("stripe_customer_id", customerId);
+
+  if (error) {
+    console.error("Failed to update subscription status:", error.message);
+    return jsonResponse({ error: `Failed to update subscription status: ${error.message}` }, { status: 500 });
+  }
+  return jsonResponse({ ok: true, note: `subscription_status set to ${newStatus}` });
+}
+
+export default async (req) => {
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  const { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SECRET_KEY } = process.env;
+  if (!STRIPE_SECRET_KEY || !STRIPE_WEBHOOK_SECRET || !SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    return jsonResponse({ error: "Server missing required env vars" }, { status: 500 });
+  }
+
+  const stripe = new Stripe(STRIPE_SECRET_KEY);
+  const signature = req.headers.get("stripe-signature");
+  // Signature verification needs the exact raw bytes Stripe signed —
+  // reading as text here, never JSON.parse before this check.
+  const rawBody = await req.text();
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return jsonResponse({ error: `Webhook signature verification failed: ${err.message}` }, { status: 400 });
+  }
+
+  // Uses the secret key (not a user's JWT — Stripe is calling us, not a
+  // signed-in browser) so it can write on behalf of any user, bypassing
+  // RLS by design for this one trusted, signature-verified backend job.
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+    if (session.mode === "subscription") {
+      return await handleSubscriptionCheckout(supabase, session);
+    }
+    return await handleOneTimePayment(supabase, session);
+  }
+
+  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    return await handleSubscriptionStatusChange(supabase, event.data.object, event.type);
+  }
+
+  // Ignoring anything else keeps this handler safe as more event types
+  // get subscribed to in Stripe over time.
+  return jsonResponse({ ok: true, ignored: event.type });
 };
