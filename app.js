@@ -242,6 +242,14 @@
         return `<button class="chip ${state.search.category === c ? "is-active" : ""}" data-cat="${c}">${label}</button>`;
       })
       .join("");
+
+    const datalist = document.getElementById("category-suggestions");
+    if (datalist && !datalist.childElementCount) {
+      // Static list — categories don't change at runtime, so this only
+      // needs to run once even though populateCategoryChips() re-runs
+      // on every keystroke/direction change.
+      datalist.innerHTML = ALL_CATEGORIES.map((c) => `<option value="${c}"></option>`).join("");
+    }
   }
 
   function renderSearch() {

@@ -91,7 +91,8 @@
       </div>
       <p class="section-intro">Search a curated sample of the current counter-tariff lists by HS code, keyword, or category, and add anything relevant to your watchlist.</p>
       <div class="search-bar">
-        <input type="search" id="search-input" placeholder="Try “steel”, “0406”, or “furniture”" autocomplete="off">
+        <input type="search" id="search-input" list="category-suggestions" placeholder="Try “steel”, “0406”, or “furniture”" autocomplete="off">
+        <datalist id="category-suggestions"></datalist>
       </div>
 
       <button type="button" class="bulk-lookup-toggle" id="bulk-lookup-toggle">Look up multiple codes at once ▾</button>
