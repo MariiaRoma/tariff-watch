@@ -29,6 +29,19 @@ function sanitizeForPdf(text) {
 // file directly inside netlify/functions/ gets auto-registered as its
 // own callable function — a helper with no HTTP handler then crashes
 // if anything ever invokes it directly, as happened here.
+// Turns a "#1c2951"-style color from the brand-settings color picker
+// into the {r,g,b} 0-1 format pdf-lib's rgb() expects. Falls back to
+// null (caller uses the default navy) for anything malformed.
+function hexToRgb(hex) {
+  if (!hex) return null;
+  const clean = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  return rgb(r, g, b);
+}
+
 const PAGE_SIZE = [612, 792]; // US Letter, points
 const MARGIN = 50;
 const ROW_HEIGHT = 20;
@@ -41,7 +54,7 @@ const GRAY = rgb(0.45, 0.45, 0.45);
 const WHITE = rgb(1, 1, 1);
 const INK = rgb(0.13, 0.13, 0.15);
 
-async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
+async function buildExposureReportPdf({ watchlistName, generatedAt, items, brand }) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -49,13 +62,31 @@ async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
   let page;
   let y;
 
+  const brandColor = hexToRgb(brand?.accent_color) || BRAND;
+  const brandName = sanitizeForPdf(brand?.company_name) || "TARIFF WATCH";
+  let logoImage = null;
+  if (brand?.logoBytes) {
+    try {
+      logoImage = brand.logoType === "png" ? await pdfDoc.embedPng(brand.logoBytes) : await pdfDoc.embedJpg(brand.logoBytes);
+    } catch (e) {
+      /* corrupt or unsupported logo file — skip it rather than fail the whole report */
+    }
+  }
+
   function startPage(withBrandHeader) {
     page = pdfDoc.addPage(PAGE_SIZE);
     pages.push(page);
     if (withBrandHeader) {
-      page.drawRectangle({ x: 0, y: PAGE_SIZE[1] - HEADER_HEIGHT, width: PAGE_SIZE[0], height: HEADER_HEIGHT, color: BRAND });
-      page.drawText("TARIFF WATCH", { x: MARGIN, y: PAGE_SIZE[1] - 38, size: 11, font: bold, color: WHITE });
-      page.drawText("Tariff Exposure Report", { x: MARGIN, y: PAGE_SIZE[1] - 62, size: 21, font: bold, color: WHITE });
+      page.drawRectangle({ x: 0, y: PAGE_SIZE[1] - HEADER_HEIGHT, width: PAGE_SIZE[0], height: HEADER_HEIGHT, color: brandColor });
+      if (logoImage) {
+        const logoHeight = 42;
+        const logoWidth = (logoImage.width / logoImage.height) * logoHeight;
+        page.drawImage(logoImage, { x: MARGIN, y: PAGE_SIZE[1] - HEADER_HEIGHT / 2 - logoHeight / 2, width: logoWidth, height: logoHeight });
+        page.drawText("Tariff Exposure Report", { x: MARGIN + logoWidth + 16, y: PAGE_SIZE[1] - 55, size: 18, font: bold, color: WHITE });
+      } else {
+        page.drawText(brandName.toUpperCase(), { x: MARGIN, y: PAGE_SIZE[1] - 38, size: 11, font: bold, color: WHITE });
+        page.drawText("Tariff Exposure Report", { x: MARGIN, y: PAGE_SIZE[1] - 62, size: 21, font: bold, color: WHITE });
+      }
       y = PAGE_SIZE[1] - HEADER_HEIGHT - 28;
     } else {
       page.drawText("Tariff Exposure Report (continued)", { x: MARGIN, y: PAGE_SIZE[1] - MARGIN, size: 10, font: bold, color: GRAY });
@@ -79,7 +110,7 @@ async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
   const avgRate = items.length ? Math.round(items.reduce((s, i) => s + (i.rate || 0), 0) / items.length) : 0;
   const summary = `${items.length} HS code${items.length === 1 ? "" : "s"} tracked   |   ${changed} recently changed   |   ${avgRate}% average rate`;
   page.drawRectangle({ x: MARGIN, y: y - 22, width: PAGE_SIZE[0] - 2 * MARGIN, height: 28, color: ZEBRA });
-  page.drawText(sanitizeForPdf(summary), { x: MARGIN + 10, y: y - 14, size: 10, font: bold, color: BRAND });
+  page.drawText(sanitizeForPdf(summary), { x: MARGIN + 10, y: y - 14, size: 10, font: bold, color: brandColor });
   y -= 50;
 
   if (items.length === 0) {
@@ -95,9 +126,9 @@ async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
     let rowIndex = 0;
     for (const [category, catItems] of byCategory) {
       ensureSpace(40);
-      page.drawText(sanitizeForPdf(category).toUpperCase(), { x: MARGIN, y, size: 9, font: bold, color: BRAND });
+      page.drawText(sanitizeForPdf(category).toUpperCase(), { x: MARGIN, y, size: 9, font: bold, color: brandColor });
       y -= 5;
-      page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 1, color: BRAND });
+      page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 1, color: brandColor });
       y -= 17;
 
       for (const item of catItems) {
@@ -126,18 +157,26 @@ async function buildExposureReportPdf({ watchlistName, generatedAt, items }) {
   }
 
   const total = pages.length;
+  const footerBrandLine = brand?.company_name
+    ? `${sanitizeForPdf(brand.company_name)}${brand.contact_person ? "  ·  " + sanitizeForPdf(brand.contact_person) : ""}`
+    : "Generated by Tariff Watch";
+  const footerContactParts = [brand?.address, brand?.phone, brand?.email].filter(Boolean).map(sanitizeForPdf);
+
   pages.forEach((p, idx) => {
     p.drawLine({ start: { x: MARGIN, y: 38 }, end: { x: PAGE_SIZE[0] - MARGIN, y: 38 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-    p.drawText("Generated by Tariff Watch  -  Not legal or customs advice  -  verify with official sources", {
+    p.drawText(`${footerBrandLine}  -  Not legal or customs advice  -  verify with official sources`, {
       x: MARGIN, y: 26, size: 7, font, color: GRAY,
     });
+    if (footerContactParts.length) {
+      p.drawText(footerContactParts.join("   ·   "), { x: MARGIN, y: 15, size: 7, font, color: GRAY });
+    }
     p.drawText(`Page ${idx + 1} of ${total}`, { x: PAGE_SIZE[0] - MARGIN - 55, y: 26, size: 7, font, color: GRAY });
   });
 
   return pdfDoc.save();
 }
 
-async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, rows }) {
+async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, rows, brand }) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -148,13 +187,31 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
   const directionLabel =
     direction === "us_to_ca" ? "Importing into Canada (US -> CA)" : "Importing into the US (CA -> US)";
 
+  const brandColor = hexToRgb(brand?.accent_color) || BRAND;
+  const brandName = sanitizeForPdf(brand?.company_name) || "TARIFF WATCH";
+  let logoImage = null;
+  if (brand?.logoBytes) {
+    try {
+      logoImage = brand.logoType === "png" ? await pdfDoc.embedPng(brand.logoBytes) : await pdfDoc.embedJpg(brand.logoBytes);
+    } catch (e) {
+      /* corrupt or unsupported logo file — skip it rather than fail the whole report */
+    }
+  }
+
   function startPage(withBrandHeader) {
     page = pdfDoc.addPage(PAGE_SIZE);
     pages.push(page);
     if (withBrandHeader) {
-      page.drawRectangle({ x: 0, y: PAGE_SIZE[1] - HEADER_HEIGHT, width: PAGE_SIZE[0], height: HEADER_HEIGHT, color: BRAND });
-      page.drawText("TARIFF WATCH", { x: MARGIN, y: PAGE_SIZE[1] - 38, size: 11, font: bold, color: WHITE });
-      page.drawText("Bulk Landed-Cost Report", { x: MARGIN, y: PAGE_SIZE[1] - 62, size: 21, font: bold, color: WHITE });
+      page.drawRectangle({ x: 0, y: PAGE_SIZE[1] - HEADER_HEIGHT, width: PAGE_SIZE[0], height: HEADER_HEIGHT, color: brandColor });
+      if (logoImage) {
+        const logoHeight = 42;
+        const logoWidth = (logoImage.width / logoImage.height) * logoHeight;
+        page.drawImage(logoImage, { x: MARGIN, y: PAGE_SIZE[1] - HEADER_HEIGHT / 2 - logoHeight / 2, width: logoWidth, height: logoHeight });
+        page.drawText("Bulk Landed-Cost Report", { x: MARGIN + logoWidth + 16, y: PAGE_SIZE[1] - 55, size: 18, font: bold, color: WHITE });
+      } else {
+        page.drawText(brandName.toUpperCase(), { x: MARGIN, y: PAGE_SIZE[1] - 38, size: 11, font: bold, color: WHITE });
+        page.drawText("Bulk Landed-Cost Report", { x: MARGIN, y: PAGE_SIZE[1] - 62, size: 21, font: bold, color: WHITE });
+      }
       y = PAGE_SIZE[1] - HEADER_HEIGHT - 28;
     } else {
       page.drawText("Bulk Landed-Cost Report (continued)", { x: MARGIN, y: PAGE_SIZE[1] - MARGIN, size: 10, font: bold, color: GRAY });
@@ -209,18 +266,18 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
 
   const summary = `${rows.length} line${rows.length === 1 ? "" : "s"}   |   ${matchedCount} matched   |   ${unmatchedCount} unmatched   |   Grand total: $${grandTotal.toFixed(2)} ${currency}`;
   page.drawRectangle({ x: MARGIN, y: y - 22, width: PAGE_SIZE[0] - 2 * MARGIN, height: 28, color: ZEBRA });
-  page.drawText(sanitizeForPdf(summary), { x: MARGIN + 10, y: y - 14, size: 10, font: bold, color: BRAND });
+  page.drawText(sanitizeForPdf(summary), { x: MARGIN + 10, y: y - 14, size: 10, font: bold, color: brandColor });
   y -= 50;
 
   ensureSpace(ROW_HEIGHT + 10);
-  page.drawText("HS code", { x: MARGIN + 6, y, size: 8, font: bold, color: BRAND });
-  page.drawText("Qty", { x: MARGIN + 95, y, size: 8, font: bold, color: BRAND });
-  page.drawText("Unit value", { x: MARGIN + 140, y, size: 8, font: bold, color: BRAND });
-  page.drawText("Line value", { x: MARGIN + 215, y, size: 8, font: bold, color: BRAND });
-  page.drawText("Duty", { x: MARGIN + 290, y, size: 8, font: bold, color: BRAND });
-  page.drawText("Total", { x: MARGIN + 365, y, size: 8, font: bold, color: BRAND });
+  page.drawText("HS code", { x: MARGIN + 6, y, size: 8, font: bold, color: brandColor });
+  page.drawText("Qty", { x: MARGIN + 95, y, size: 8, font: bold, color: brandColor });
+  page.drawText("Unit value", { x: MARGIN + 140, y, size: 8, font: bold, color: brandColor });
+  page.drawText("Line value", { x: MARGIN + 215, y, size: 8, font: bold, color: brandColor });
+  page.drawText("Duty", { x: MARGIN + 290, y, size: 8, font: bold, color: brandColor });
+  page.drawText("Total", { x: MARGIN + 365, y, size: 8, font: bold, color: brandColor });
   y -= 6;
-  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 1, color: BRAND });
+  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_SIZE[0] - MARGIN, y }, thickness: 1, color: brandColor });
   y -= 16;
 
   let rowIndex = 0;
@@ -245,11 +302,19 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
   }
 
   const total = pages.length;
+  const footerBrandLine = brand?.company_name
+    ? `${sanitizeForPdf(brand.company_name)}${brand.contact_person ? "  ·  " + sanitizeForPdf(brand.contact_person) : ""}`
+    : "Generated by Tariff Watch";
+  const footerContactParts = [brand?.address, brand?.phone, brand?.email].filter(Boolean).map(sanitizeForPdf);
+
   pages.forEach((p, idx) => {
     p.drawLine({ start: { x: MARGIN, y: 38 }, end: { x: PAGE_SIZE[0] - MARGIN, y: 38 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-    p.drawText("Generated by Tariff Watch  -  Not legal or customs advice  -  verify with official sources", {
+    p.drawText(`${footerBrandLine}  -  Not legal or customs advice  -  verify with official sources`, {
       x: MARGIN, y: 26, size: 7, font, color: GRAY,
     });
+    if (footerContactParts.length) {
+      p.drawText(footerContactParts.join("   ·   "), { x: MARGIN, y: 15, size: 7, font, color: GRAY });
+    }
     p.drawText(`Page ${idx + 1} of ${total}`, { x: PAGE_SIZE[0] - MARGIN - 55, y: 26, size: 7, font, color: GRAY });
   });
 
@@ -329,7 +394,22 @@ async function handleOneTimePayment(supabase, session) {
       .maybeSingle();
     if (profileRow?.subscription_status === "active") {
       const { data: brandRow } = await supabase.from("brand_settings").select("*").eq("user_id", userId).maybeSingle();
-      if (brandRow) brand = brandRow;
+      if (brandRow) {
+        brand = { ...brandRow };
+        if (brandRow.logo_url) {
+          try {
+            const { data: logoBlob, error: logoError } = await supabase.storage.from("logos").download(brandRow.logo_url);
+            if (!logoError && logoBlob) {
+              brand.logoBytes = Buffer.from(await logoBlob.arrayBuffer());
+              brand.logoType = brandRow.logo_url.toLowerCase().endsWith(".png") ? "png" : "jpeg";
+            }
+          } catch (e) {
+            console.error("Failed to download brand logo:", e.message);
+            // Report still generates fine without a logo — just falls
+            // back to the plain brand-color header.
+          }
+        }
+      }
     }
 
     if (product === "bulk_calc") {
