@@ -574,7 +574,26 @@
       }
 
       const url = `${window.location.origin}/?share=${token}`;
-      statusEl.innerHTML = `Share link: <a href="${url}">${url}</a> — <a href="#" id="stop-sharing-link">stop sharing</a>`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: "My Tariff Watch watchlist",
+            text: "Here's the HS codes I'm tracking on Tariff Watch:",
+            url,
+          });
+        } catch (e) {
+          if (e?.name === "AbortError") return; // person closed the share sheet — not an error
+          throw e;
+        }
+      } else {
+        // No Web Share support (mostly older desktop browsers) — a
+        // plain link is the only option left.
+        statusEl.innerHTML = `Share link: <a href="${url}">${url}</a>`;
+        return;
+      }
+
+      statusEl.innerHTML = `Shared ✓ — <a href="#" id="stop-sharing-link">stop sharing</a>`;
       const stopLink = document.getElementById("stop-sharing-link");
       if (stopLink) {
         stopLink.addEventListener("click", async (e) => {
