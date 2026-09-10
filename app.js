@@ -33,6 +33,7 @@
   // publishable key, same trust model as VAPID_PUBLIC_KEY above.
   const PRICE_EXPOSURE_REPORT = "price_1UDo2h2XFD9iubrBAGsgoCFK";
   const PRICE_BULK_CALC = "price_1UDrxf2XFD9iubrBNqbsGydu";
+  const PRICE_WHITE_LABEL = "price_1UDsw32XFD9iubrBhywOnL5b";
   let bulkParsedRows = [];
 
   function loadJSON(key, fallback) {
@@ -908,6 +909,128 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // White-Label branding (subscription)
+  // ------------------------------------------------------------------
+  async function refreshSubscriptionUI(userId) {
+    try {
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("subscription_status")
+        .eq("id", userId)
+        .maybeSingle();
+      const isActive = profile?.subscription_status === "active";
+      document.getElementById("whitelabel-not-subscribed").style.display = isActive ? "none" : "block";
+      document.getElementById("whitelabel-subscribed").style.display = isActive ? "block" : "none";
+      if (isActive) await loadBrandSettingsForm(userId);
+    } catch (e) {
+      /* best effort */
+    }
+  }
+
+  async function loadBrandSettingsForm(userId) {
+    try {
+      const { data: brand } = await supabaseClient.from("brand_settings").select("*").eq("user_id", userId).maybeSingle();
+      if (!brand) return;
+      document.getElementById("brand-company-name").value = brand.company_name || "";
+      document.getElementById("brand-accent-color").value = brand.accent_color || "#1c2951";
+      document.getElementById("brand-address").value = brand.address || "";
+      document.getElementById("brand-phone").value = brand.phone || "";
+      document.getElementById("brand-email").value = brand.email || "";
+      document.getElementById("brand-contact-person").value = brand.contact_person || "";
+    } catch (e) {
+      /* best effort */
+    }
+  }
+
+  async function subscribeWhiteLabel() {
+    const statusEl = document.getElementById("brand-status");
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        statusEl.textContent = "Please sign in first.";
+        return;
+      }
+      const res = await fetch("/.netlify/functions/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ priceId: PRICE_WHITE_LABEL, product: "white_label" }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.url) {
+        statusEl.textContent = `Error: ${payload.error || "Could not start checkout"}`;
+        return;
+      }
+      window.location.href = payload.url;
+    } catch (e) {
+      statusEl.textContent = "Something went wrong — please try again.";
+    }
+  }
+
+  async function saveBrandSettings() {
+    const statusEl = document.getElementById("brand-status");
+    statusEl.textContent = "Saving...";
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        statusEl.textContent = "Please sign in first.";
+        return;
+      }
+
+      const update = {
+        user_id: session.user.id,
+        company_name: document.getElementById("brand-company-name").value.trim(),
+        accent_color: document.getElementById("brand-accent-color").value,
+        address: document.getElementById("brand-address").value.trim(),
+        phone: document.getElementById("brand-phone").value.trim(),
+        email: document.getElementById("brand-email").value.trim(),
+        contact_person: document.getElementById("brand-contact-person").value.trim(),
+      };
+
+      const fileInput = document.getElementById("brand-logo-file");
+      if (fileInput.files[0]) {
+        const file = fileInput.files[0];
+        const ext = file.name.split(".").pop().toLowerCase();
+        const path = `${session.user.id}/logo.${ext}`;
+        const { error: uploadError } = await supabaseClient.storage.from("logos").upload(path, file, { upsert: true });
+        if (uploadError) throw uploadError;
+        update.logo_url = path;
+      }
+
+      const { error } = await supabaseClient.from("brand_settings").upsert(update, { onConflict: "user_id" });
+      if (error) throw error;
+      statusEl.textContent = "Saved.";
+    } catch (e) {
+      statusEl.textContent = `Error: ${e.message || "Could not save branding"}`;
+    }
+  }
+
+  async function manageSubscription() {
+    const statusEl = document.getElementById("brand-status");
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        statusEl.textContent = "Please sign in first.";
+        return;
+      }
+      const res = await fetch("/.netlify/functions/create-portal-session", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.url) {
+        statusEl.textContent = `Error: ${payload.error || "Could not open subscription management"}`;
+        return;
+      }
+      window.location.href = payload.url;
+    } catch (e) {
+      statusEl.textContent = "Something went wrong — please try again.";
+    }
+  }
+
   function initAccount() {
     document.getElementById("account-send-link").addEventListener("click", () => {
       const email = document.getElementById("account-email").value.trim();
@@ -916,6 +1039,9 @@
     document.getElementById("account-sign-out").addEventListener("click", signOutAccount);
     document.getElementById("buy-exposure-report").addEventListener("click", buyExposureReport);
     initBulkCalculator();
+    document.getElementById("subscribe-white-label").addEventListener("click", subscribeWhiteLabel);
+    document.getElementById("save-brand-settings").addEventListener("click", saveBrandSettings);
+    document.getElementById("manage-subscription").addEventListener("click", manageSubscription);
 
     // Fires on sign-in, sign-out, and token refresh — including right
     // after the person clicks the magic link and lands back here.
@@ -925,6 +1051,7 @@
         linkPushSubscriptionToUser(session.user.id);
         syncWatchlistToSupabase();
         renderMyReports(session.user.id);
+        refreshSubscriptionUI(session.user.id);
       }
     });
     // Initial paint, in case a session already exists in this browser.
@@ -934,6 +1061,7 @@
         linkPushSubscriptionToUser(data.session.user.id);
         syncWatchlistToSupabase();
         renderMyReports(data.session.user.id);
+        refreshSubscriptionUI(data.session.user.id);
       }
     });
   }
