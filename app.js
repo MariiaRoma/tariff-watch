@@ -165,6 +165,28 @@
     root.innerHTML = `<div class="ledger">${items.map((it) => ledgerRow(it, { showAction: true })).join("")}</div>`;
   }
 
+  // Feed of every rate change in the dataset, regardless of whether the
+  // person is tracking that code — surfaces market-wide movement even
+  // on a brand-new, empty watchlist. Capped so this stays a quick scan,
+  // not a second copy of the full Search list.
+  function renderRecentChanges() {
+    const root = document.getElementById("recent-changes-feed");
+    if (!root) return;
+    const changed = TARIFF_DATA.filter((item) => item.priorRate != null && item.priorRate !== item.rate);
+    changed.sort((a, b) => ((a.changeDate || a.effectiveDate || "") < (b.changeDate || b.effectiveDate || "") ? 1 : -1));
+    const recent = changed.slice(0, 20);
+
+    if (!recent.length) {
+      root.innerHTML = `
+        <div class="ledger-empty">
+          <strong>No rate changes recorded yet</strong>
+          Once a synced code's rate moves, it'll show up here first.
+        </div>`;
+      return;
+    }
+    root.innerHTML = `<div class="ledger">${recent.map((it) => ledgerRow(it, { showAction: true })).join("")}</div>`;
+  }
+
   // ------------------------------------------------------------------
   // Search screen
   // ------------------------------------------------------------------
@@ -256,6 +278,7 @@
     persistWatchlist();
     renderWatchlist();
     renderSearch();
+    renderRecentChanges();
     updateNotifyStrip();
     syncPushSubscriptionIfEnabled();
     if (state.sheetItemId === id) openSheet(id); // refresh sheet button label
@@ -1095,6 +1118,7 @@
     populateCategoryChips();
     renderWatchlist();
     renderSearch();
+    renderRecentChanges();
     checkForChangesSinceLastVisit();
 
     // Tab bar
