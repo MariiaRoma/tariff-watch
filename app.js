@@ -146,6 +146,22 @@
   // ------------------------------------------------------------------
   // Watchlist screen
   // ------------------------------------------------------------------
+  // A small, diverse starter set for the empty-watchlist state — one
+  // item from each of a few different categories, so a first-time
+  // visitor has something concrete to tap instead of a blank list and
+  // an empty search box.
+  function getOnboardingSuggestions() {
+    const seenCategories = new Set();
+    const picks = [];
+    for (const item of TARIFF_DATA) {
+      if (seenCategories.has(item.category)) continue;
+      seenCategories.add(item.category);
+      picks.push(item);
+      if (picks.length >= 3) break;
+    }
+    return picks;
+  }
+
   function renderWatchlist() {
     const root = document.getElementById("watchlist-list");
     const items = [...state.watchlist].map(byId).filter(Boolean);
@@ -154,12 +170,19 @@
       : "";
 
     if (!items.length) {
+      const suggestions = getOnboardingSuggestions();
       root.innerHTML = `
         <div class="ledger-empty">
           <strong>No codes on watch yet</strong>
-          Add an HS code from Search, or from the calculator result, and
-          Tariff Watch will flag it here whenever its rate moves.
-        </div>`;
+          Add a few to get started — Tariff Watch flags anything here whenever its rate moves.
+        </div>
+        ${
+          suggestions.length
+            ? `<p class="field-hint" style="padding:0 20px 6px;">A few to try:</p><div class="ledger">${suggestions
+                .map((it) => ledgerRow(it, { showAction: true }))
+                .join("")}</div>`
+            : ""
+        }`;
       return;
     }
 
