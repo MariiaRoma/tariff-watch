@@ -166,12 +166,28 @@ a { color: inherit; }
 .bulk-lookup-toggle {
   background: none;
   border: none;
-  padding: 4px 0;
+  padding: 4px 20px;
   font-size: 13px;
   text-decoration: underline;
   color: var(--navy);
   cursor: pointer;
   margin-bottom: 8px;
+}
+
+#bulk-lookup-panel {
+  padding: 0 20px 12px;
+}
+
+#bulk-lookup-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: var(--font-mono);
+  resize: vertical;
 }
 
 /* -- Main scroll area ------------------------------------------------------ */
