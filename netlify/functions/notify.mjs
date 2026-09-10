@@ -56,7 +56,8 @@ export default async (req) => {
       if (!record) return;
 
       const watched = new Set(record.watchlist || []);
-      const relevant = changes.filter((c) => watched.has(c.id));
+      const threshold = record.threshold || 0;
+      const relevant = changes.filter((c) => watched.has(c.id) && Math.abs(c.newRate - c.oldRate) >= threshold);
       // Weekly-digest subscribers get summarized by the separate
       // send-digest function instead of an instant push per change.
       if (relevant.length === 0 || record.notificationMode === "weekly") {

@@ -18,7 +18,7 @@ export default async (req) => {
     return jsonResponse({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { subscription, watchlist, notificationMode } = body || {};
+  const { subscription, watchlist, notificationMode, threshold } = body || {};
   if (
     !subscription ||
     typeof subscription.endpoint !== "string" ||
@@ -35,18 +35,20 @@ export default async (req) => {
   const store = getStore(SUBSCRIPTIONS_STORE);
   const key = keyForEndpoint(subscription.endpoint);
 
-  // Preserve a previously chosen notification mode on calls that don't
-  // send one (e.g. the watchlist-only sync that fires on every add/
-  // remove) — only an explicit value here should ever change it.
+  // Preserve previously chosen notification settings on calls that don't
+  // send them (e.g. the watchlist-only sync that fires on every add/
+  // remove) — only an explicit value here should ever change them.
   const existing = await store.get(key, { type: "json" });
   const resolvedMode = notificationMode || existing?.notificationMode || "instant";
+  const resolvedThreshold = Number.isFinite(threshold) ? threshold : existing?.threshold ?? 0;
 
   await store.setJSON(key, {
     subscription,
     watchlist,
     notificationMode: resolvedMode,
+    threshold: resolvedThreshold,
     updatedAt: new Date().toISOString(),
   });
 
-  return jsonResponse({ ok: true, watchedCount: watchlist.length, notificationMode: resolvedMode });
+  return jsonResponse({ ok: true, watchedCount: watchlist.length, notificationMode: resolvedMode, threshold: resolvedThreshold });
 };

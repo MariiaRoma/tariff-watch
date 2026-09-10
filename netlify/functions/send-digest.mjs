@@ -55,7 +55,10 @@ export default async (req) => {
       }
 
       const watched = new Set(record.watchlist || []);
-      const relevant = [...changedById.values()].filter((item) => watched.has(item.id));
+      const threshold = record.threshold || 0;
+      const relevant = [...changedById.values()].filter(
+        (item) => watched.has(item.id) && Math.abs(item.rate - item.priorRate) >= threshold
+      );
       if (relevant.length === 0) {
         skipped++;
         return;
