@@ -12,6 +12,7 @@
 // store doesn't accumulate dead devices.
 import webpush from "web-push";
 import { getStore } from "@netlify/blobs";
+import { createClient } from "@supabase/supabase-js";
 import { SUBSCRIPTIONS_STORE, jsonResponse } from "./_shared.mjs";
 
 export default async (req) => {
@@ -41,6 +42,24 @@ export default async (req) => {
   if (changes.length === 0) {
     return jsonResponse({ ok: true, sent: 0, skipped: 0, failed: 0, note: "No changes provided" });
   }
+
+  // Log each change into rate_history for the in-app history graph and
+  // date comparison — best-effort, so a logging hiccup here never blocks
+  // the actual push notifications below from going out.
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY } = process.env;
+  if (SUPABASE_URL && SUPABASE_SECRET_KEY) {
+    try {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = changes
+        .filter((c) => c.id && c.newRate != null)
+        .map((c) => ({ hs_id: c.id, rate: c.newRate, recorded_date: today }));
+      if (rows.length) await supabase.from("rate_history").insert(rows);
+    } catch (e) {
+      console.error("Failed to log rate history:", e);
+    }
+  }
+
   const changedIds = new Set(changes.map((c) => c.id));
 
   const store = getStore(SUBSCRIPTIONS_STORE);
