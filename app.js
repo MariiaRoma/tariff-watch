@@ -234,6 +234,70 @@
     root.innerHTML = `<div class="ledger">${results.map((it) => ledgerRow(it, { showAction: true })).join("")}</div>`;
   }
 
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Matches loosely — the person might paste our internal id
+  // ("ca-0402-10-20"), the plain HS number ("0402.10.20"), or the same
+  // digits with different punctuation/spacing ("0402 10 20").
+  function findTariffByLooseCode(raw) {
+    const clean = raw.trim();
+    if (!clean) return null;
+    let found = TARIFF_DATA.find((d) => d.id.toLowerCase() === clean.toLowerCase());
+    if (found) return found;
+    found = TARIFF_DATA.find((d) => d.hs.toLowerCase() === clean.toLowerCase());
+    if (found) return found;
+    const digitsOnly = clean.replace(/[^0-9]/g, "");
+    if (digitsOnly) {
+      found = TARIFF_DATA.find((d) => d.hs.replace(/[^0-9]/g, "") === digitsOnly);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function runBulkLookup() {
+    const raw = document.getElementById("bulk-lookup-input").value;
+    const codes = raw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const resultsEl = document.getElementById("bulk-lookup-results");
+
+    if (!codes.length) {
+      resultsEl.innerHTML = "";
+      return;
+    }
+
+    const matched = [];
+    const unmatched = [];
+    const seen = new Set();
+    codes.forEach((c) => {
+      const item = findTariffByLooseCode(c);
+      if (item) {
+        if (!seen.has(item.id)) {
+          matched.push(item);
+          seen.add(item.id);
+        }
+      } else {
+        unmatched.push(c);
+      }
+    });
+
+    let html = `<p class="field-hint">${matched.length} matched · ${unmatched.length} not found</p>`;
+    if (matched.length) {
+      html += `<div class="ledger">${matched.map((it) => ledgerRow(it, { showAction: true })).join("")}</div>`;
+    }
+    if (unmatched.length) {
+      html += `<div class="ledger-empty"><strong>Not found:</strong> ${unmatched.map(escapeHtml).join(", ")}</div>`;
+    }
+    resultsEl.innerHTML = html;
+  }
+
   // ------------------------------------------------------------------
   // Detail sheet
   // ------------------------------------------------------------------
@@ -1127,6 +1191,7 @@
     });
 
     initAccount();
+    document.getElementById("bulk-lookup-btn").addEventListener("click", runBulkLookup);
 
     // Delegate ledger row / action clicks (watchlist + search screens)
     document.body.addEventListener("click", (e) => {
