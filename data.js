@@ -5,8 +5,8 @@
  * layers live updates on top on every scheduled run.
  */
 
-const DATA_VERSION = "2026-09-10";
-const DATA_LAST_SYNCED = "September 10, 2026";
+const DATA_VERSION = "2026-09-08";
+const DATA_LAST_SYNCED = "September 8, 2026";
 
 const TARIFF_DATA = [
   {
@@ -908,42 +908,6 @@ const TARIFF_DATA = [
     "effectiveDate": "2025-06-04",
     "legalBasis": "Section 232 Aluminum (pre-existing, separate from Section 338)",
     "verified": false
-  },
-  {
-    "id": "ca-9999-99-99",
-    "direction": "us_to_ca",
-    "hs": "9999.99.99",
-    "desc": "Fake test product one",
-    "category": "Other",
-    "rate": 33.0,
-    "priorRate": null,
-    "effectiveDate": "2026-09-08",
-    "legalBasis": "Counter-tariff list (Finance Canada) \u2014 added by live sync",
-    "verified": true
-  },
-  {
-    "id": "ca-9998-98-98",
-    "direction": "us_to_ca",
-    "hs": "9998.98.98",
-    "desc": "Fake test product two",
-    "category": "Other",
-    "rate": 50.0,
-    "priorRate": null,
-    "effectiveDate": "2026-09-08",
-    "legalBasis": "Counter-tariff list (Finance Canada) \u2014 added by live sync",
-    "verified": true
-  },
-  {
-    "id": "ca-9997-97-97",
-    "direction": "us_to_ca",
-    "hs": "9997.97.97",
-    "desc": "Fake test product three",
-    "category": "Other",
-    "rate": 25.0,
-    "priorRate": null,
-    "effectiveDate": "2026-09-08",
-    "legalBasis": "Counter-tariff list (Finance Canada) \u2014 added by live sync",
-    "verified": true
   },
   {
     "id": "ca-0402-10-10",
