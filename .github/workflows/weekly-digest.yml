@@ -1,0 +1,34 @@
+name: Send weekly digest
+
+# Runs every Monday and calls the send-digest Netlify Function, which
+# summarizes the last 7 days of rate changes into one push notification
+# per device that opted into weekly-digest mode (see notify-mode-select
+# in the app). Devices in instant mode are unaffected — they already got
+# notified by the daily sync-tariffs workflow as changes happened.
+
+on:
+  schedule:
+    # 13:00 UTC every Monday.
+    - cron: "0 13 * * 1"
+  workflow_dispatch: {} # lets you click "Run workflow" manually in the Actions tab
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call send-digest endpoint
+        env:
+          NOTIFY_URL: ${{ secrets.NOTIFY_URL }}
+          NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
+        run: |
+          if [ -z "$NOTIFY_URL" ] || [ -z "$NOTIFY_SECRET" ]; then
+            echo "NOTIFY_URL / NOTIFY_SECRET not set as repo secrets yet — skipping."
+            exit 0
+          fi
+          # NOTIFY_URL points at .../functions/notify — swap the last path
+          # segment for send-digest rather than needing a second secret.
+          DIGEST_URL="${NOTIFY_URL%/notify}/send-digest"
+          echo "Calling $DIGEST_URL ..."
+          curl -sf -X POST "$DIGEST_URL" \
+            -H "X-Notify-Secret: $NOTIFY_SECRET" \
+            || echo "WARNING: send-digest call failed."
