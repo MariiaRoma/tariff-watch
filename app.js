@@ -389,6 +389,81 @@
     };
   }
 
+  const LS_CALC_SCENARIOS = "tw_calc_scenarios_v1";
+
+  function loadScenarios() {
+    return loadJSON(LS_CALC_SCENARIOS, []);
+  }
+
+  function saveScenariosList(list) {
+    saveJSON(LS_CALC_SCENARIOS, list);
+  }
+
+  function saveCurrentScenario() {
+    const s = calcState();
+    if (!s.value) {
+      window.alert("Enter a customs value first — there's nothing to save yet.");
+      return;
+    }
+    const name = window.prompt("Name this scenario (e.g. \"Furniture shipment from Toronto\"):");
+    if (!name || !name.trim()) return;
+    const scenarios = loadScenarios();
+    scenarios.unshift({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.trim(),
+      ...s,
+      savedAt: new Date().toISOString(),
+    });
+    saveScenariosList(scenarios);
+    renderScenariosList();
+  }
+
+  function loadScenarioIntoForm(id) {
+    const scenario = loadScenarios().find((sc) => sc.id === id);
+    if (!scenario) return;
+    document.querySelectorAll("#screen-calculator .direction-toggle button").forEach((b) => {
+      b.classList.toggle("is-active", b.dataset.dir === scenario.direction);
+    });
+    document.getElementById("calc-ocean-row").style.display = scenario.direction === "ca_to_us" ? "flex" : "none";
+    document.getElementById("calc-gst-note").style.display = scenario.direction === "us_to_ca" ? "block" : "none";
+    document.getElementById("calc-value").value = scenario.value || "";
+    document.getElementById("calc-rate").value = scenario.rate || "";
+    document.getElementById("calc-extra-rate").value = scenario.extraRate || "";
+    document.getElementById("calc-freight").value = scenario.freight || "";
+    document.getElementById("calc-insurance").value = scenario.insurance || "";
+    document.getElementById("calc-ocean").checked = !!scenario.ocean;
+    renderCalc();
+  }
+
+  function deleteScenario(id) {
+    saveScenariosList(loadScenarios().filter((sc) => sc.id !== id));
+    renderScenariosList();
+  }
+
+  function renderScenariosList() {
+    const root = document.getElementById("calc-scenarios-list");
+    if (!root) return;
+    const scenarios = loadScenarios();
+    if (!scenarios.length) {
+      root.innerHTML = "";
+      return;
+    }
+    root.innerHTML = scenarios
+      .map((sc) => {
+        const dirLabel = sc.direction === "us_to_ca" ? "US → CA" : "CA → US";
+        return `
+        <div class="scenario-row">
+          <div class="scenario-row__info">
+            <div class="scenario-row__name">${escapeHtml(sc.name)}</div>
+            <div class="scenario-row__meta">${money(sc.value, sc.direction === "us_to_ca" ? "CAD" : "USD")} · ${sc.rate}% · ${dirLabel}</div>
+          </div>
+          <button type="button" class="scenario-row__load" data-scenario-load="${sc.id}">Load</button>
+          <button type="button" class="scenario-row__delete" data-scenario-delete="${sc.id}" aria-label="Delete">✕</button>
+        </div>`;
+      })
+      .join("");
+  }
+
   function renderCalc() {
     const s = calcState();
     const out = document.getElementById("calc-result");
@@ -1255,6 +1330,7 @@
     renderWatchlist();
     renderSearch();
     renderRecentChanges();
+    renderScenariosList();
     checkForChangesSinceLastVisit();
 
     // Tab bar
@@ -1264,6 +1340,7 @@
 
     initAccount();
     document.getElementById("bulk-lookup-btn").addEventListener("click", runBulkLookup);
+    document.getElementById("calc-save-scenario-btn").addEventListener("click", saveCurrentScenario);
     document.getElementById("bulk-lookup-toggle").addEventListener("click", () => {
       const panel = document.getElementById("bulk-lookup-panel");
       const toggle = document.getElementById("bulk-lookup-toggle");
@@ -1278,6 +1355,16 @@
       if (actionEl) {
         e.stopPropagation();
         toggleWatch(actionEl.dataset.id, actionEl.dataset.action);
+        return;
+      }
+      const loadEl = e.target.closest("[data-scenario-load]");
+      if (loadEl) {
+        loadScenarioIntoForm(loadEl.dataset.scenarioLoad);
+        return;
+      }
+      const deleteEl = e.target.closest("[data-scenario-delete]");
+      if (deleteEl) {
+        deleteScenario(deleteEl.dataset.scenarioDelete);
         return;
       }
       const rowEl = e.target.closest("[data-open]");

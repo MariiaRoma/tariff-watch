@@ -786,3 +786,49 @@ a { color: inherit; }
   padding: 5px 6px;
   font-size: 11.5px;
 }
+
+.scenario-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.scenario-row__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.scenario-row__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.scenario-row__meta {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+}
+
+.scenario-row__load {
+  flex: none;
+  background: var(--navy);
+  color: var(--paper-0);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 11px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.scenario-row__delete {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  font-size: 14px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
