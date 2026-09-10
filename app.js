@@ -15,6 +15,7 @@
   const LS_SEEN_VERSION = "tw_seen_data_version_v1";
   const LS_PUSH_ENABLED = "tw_push_enabled_v1";
   const LS_NOTIFICATION_MODE = "tw_notification_mode_v1";
+  const LS_NOTIFY_THRESHOLD = "tw_notify_threshold_v1";
 
   // Public VAPID key for Web Push (safe to expose client-side by design —
   // it's the "who is this server" half of the key pair, not the secret).
@@ -466,6 +467,7 @@
           subscription: sub.toJSON(),
           watchlist: [...state.watchlist],
           notificationMode: loadJSON(LS_NOTIFICATION_MODE, "instant"),
+          threshold: loadJSON(LS_NOTIFY_THRESHOLD, 0),
         }),
       });
     } catch (e) {
@@ -541,8 +543,16 @@
     updateNotifyStrip();
   }
 
-  async function changeNotificationMode(mode) {
+  async function applyNotificationSettings() {
+    const modeSelect = document.getElementById("notify-mode-select");
+    const thresholdSelect = document.getElementById("notify-threshold-select");
+    const mode = modeSelect ? modeSelect.value : "instant";
+    const threshold = thresholdSelect ? Number(thresholdSelect.value) : 0;
+    const prevMode = loadJSON(LS_NOTIFICATION_MODE, "instant");
+    const prevThreshold = loadJSON(LS_NOTIFY_THRESHOLD, 0);
     saveJSON(LS_NOTIFICATION_MODE, mode);
+    saveJSON(LS_NOTIFY_THRESHOLD, threshold);
+
     if (!pushSupported() || Notification.permission !== "granted") return;
     try {
       const reg = await navigator.serviceWorker.ready;
@@ -551,7 +561,7 @@
         // Local state says push is on, but the browser doesn't actually
         // have a live subscription right now (can happen after a stale
         // reload, or if it silently expired) — recreate it so there's
-        // something for this setting to attach to, instead of quietly
+        // something for these settings to attach to, instead of quietly
         // doing nothing and leaving the old server-side record unchanged.
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -560,9 +570,11 @@
       }
       await postSubscription(sub);
     } catch (e) {
-      const modeSelect = document.getElementById("notify-mode-select");
-      if (modeSelect) modeSelect.value = mode === "weekly" ? "instant" : "weekly"; // revert the visible choice
-      window.alert("Couldn't update notification frequency — please try again, or turn notifications off and back on.");
+      saveJSON(LS_NOTIFICATION_MODE, prevMode);
+      saveJSON(LS_NOTIFY_THRESHOLD, prevThreshold);
+      if (modeSelect) modeSelect.value = prevMode;
+      if (thresholdSelect) thresholdSelect.value = prevThreshold;
+      window.alert("Couldn't update notification settings — please try again, or turn notifications off and back on.");
     }
   }
 
@@ -571,6 +583,7 @@
     const text = document.getElementById("notify-text");
     const btn = document.getElementById("notify-enable-btn");
     const modeSelect = document.getElementById("notify-mode-select");
+    const thresholdSelect = document.getElementById("notify-threshold-select");
     if (!strip || !text || !btn) return;
 
     if (!pushSupported() || sessionStorage.getItem("tw_notify_dismissed")) {
@@ -588,6 +601,10 @@
         modeSelect.style.display = "inline-block";
         modeSelect.value = loadJSON(LS_NOTIFICATION_MODE, "instant");
       }
+      if (thresholdSelect) {
+        thresholdSelect.style.display = "inline-block";
+        thresholdSelect.value = loadJSON(LS_NOTIFY_THRESHOLD, 0);
+      }
     } else if (permission === "denied") {
       // Browsers won't let us re-prompt once denied — nagging would just
       // annoy people. They can still re-enable via their browser's site
@@ -599,6 +616,7 @@
       btn.dataset.action = "enable";
       strip.classList.add("is-visible");
       if (modeSelect) modeSelect.style.display = "none";
+      if (thresholdSelect) thresholdSelect.style.display = "none";
     } else {
       strip.classList.remove("is-visible");
     }
@@ -1354,9 +1372,8 @@
       document.getElementById("notify-strip").classList.remove("is-visible");
       sessionStorage.setItem("tw_notify_dismissed", "1");
     });
-    document.getElementById("notify-mode-select").addEventListener("change", (e) => {
-      changeNotificationMode(e.target.value);
-    });
+    document.getElementById("notify-mode-select").addEventListener("change", applyNotificationSettings);
+    document.getElementById("notify-threshold-select").addEventListener("change", applyNotificationSettings);
     updateNotifyStrip();
 
     // Service worker

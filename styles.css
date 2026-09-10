@@ -762,7 +762,8 @@ a { color: inherit; }
   padding: 4px !important;
 }
 
-#notify-mode-select {
+#notify-mode-select,
+#notify-threshold-select {
   flex: none;
   border: 1px solid #B9CBBF;
   background: var(--paper-0);
