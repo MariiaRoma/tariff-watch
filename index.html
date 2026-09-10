@@ -44,19 +44,23 @@
   </div>
 
   <div class="install-strip" id="notify-strip">
-    <span id="notify-text">Get notified when a watched code changes rate.</span>
-    <select id="notify-mode-select" style="display:none;">
-      <option value="instant">Instant</option>
-      <option value="weekly">Weekly digest</option>
-    </select>
-    <select id="notify-threshold-select" style="display:none;">
-      <option value="0">Any change</option>
-      <option value="5">5+ points</option>
-      <option value="10">10+ points</option>
-      <option value="20">20+ points</option>
-    </select>
-    <button id="notify-enable-btn" type="button">Enable</button>
-    <button id="notify-dismiss" class="install-strip__dismiss" type="button" aria-label="Dismiss">✕</button>
+    <div class="install-strip__row install-strip__row--top">
+      <span id="notify-text">Get notified when a watched code changes rate.</span>
+      <button id="notify-dismiss" class="install-strip__dismiss" type="button" aria-label="Dismiss">✕</button>
+    </div>
+    <div class="install-strip__row install-strip__row--controls">
+      <select id="notify-mode-select" style="display:none;">
+        <option value="instant">Instant</option>
+        <option value="weekly">Weekly digest</option>
+      </select>
+      <select id="notify-threshold-select" style="display:none;">
+        <option value="0">Any change</option>
+        <option value="5">5+ points</option>
+        <option value="10">10+ points</option>
+        <option value="20">20+ points</option>
+      </select>
+      <button id="notify-enable-btn" type="button">Enable</button>
+    </div>
   </div>
 
   <main class="app-main" id="app-main">

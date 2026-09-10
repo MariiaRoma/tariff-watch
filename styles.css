@@ -733,8 +733,8 @@ a { color: inherit; }
 .install-strip {
   margin: 0 20px 4px;
   display: none;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   background: var(--teal-soft);
   border: 1px solid #B9CBBF;
   border-radius: var(--radius-sm);
@@ -744,6 +744,20 @@ a { color: inherit; }
 }
 
 .install-strip.is-visible { display: flex; }
+
+.install-strip__row--top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.install-strip__row--controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 .install-strip button {
   flex: none;
