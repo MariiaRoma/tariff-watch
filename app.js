@@ -33,9 +33,9 @@
 
   // Stripe price ids are not secret — safe to hardcode alongside the
   // publishable key, same trust model as VAPID_PUBLIC_KEY above.
-  const PRICE_EXPOSURE_REPORT = "price_1UDo2h2XFD9iubrBAGsgoCFK";
-  const PRICE_BULK_CALC = "price_1UDrxf2XFD9iubrBNqbsGydu";
-  const PRICE_WHITE_LABEL = "price_1UDsw32XFD9iubrBhywOnL5b";
+  const PRICE_EXPOSURE_REPORT = "price_1UFehP2XFD9iubrBjgURiZQR";
+  const PRICE_BULK_CALC = "price_1UFek62XFD9iubrBdMXmGcEi";
+  const PRICE_WHITE_LABEL = "price_1UFel62XFD9iubrB6mtae5xq";
   let bulkParsedRows = [];
 
   function loadJSON(key, fallback) {
@@ -1552,6 +1552,53 @@
   // ------------------------------------------------------------------
   // White-Label branding (subscription)
   // ------------------------------------------------------------------
+  // Mirrors the same eligibility check create-checkout-session.mjs makes
+  // server-side (the server is the actual source of truth — this is
+  // just so the buttons show the right price *before* checkout, not a
+  // second place that decides who pays).
+  async function renderReportPricingStatus(userId) {
+    const exposureBtn = document.getElementById("buy-exposure-report");
+    const bulkBtn = document.getElementById("buy-bulk-calc");
+    const note = document.getElementById("report-pricing-note");
+    if (!userId) return;
+    try {
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("subscription_status")
+        .eq("id", userId)
+        .maybeSingle();
+      const isSubscriber = profile?.subscription_status === "active";
+
+      if (isSubscriber) {
+        if (exposureBtn) exposureBtn.textContent = "Get Tariff Exposure Report (included in subscription)";
+        if (bulkBtn) bulkBtn.textContent = "Calculate & Get PDF (included in subscription)";
+        if (note) note.textContent = "Unlimited reports included in your White-Label subscription.";
+        return;
+      }
+
+      const { count } = await supabaseClient
+        .from("report_purchases")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .in("report_type", ["exposure_pdf", "bulk_calc"]);
+      const freeLeft = Math.max(0, 2 - (count || 0));
+
+      if (freeLeft > 0) {
+        if (exposureBtn) exposureBtn.textContent = `Get Tariff Exposure Report — Free (${freeLeft} left)`;
+        if (bulkBtn) bulkBtn.textContent = `Calculate & Get PDF — Free (${freeLeft} left)`;
+        if (note) {
+          note.textContent = `You have ${freeLeft} free report${freeLeft === 1 ? "" : "s"} left. After that: $7 per report, or $30/month for unlimited.`;
+        }
+      } else {
+        if (exposureBtn) exposureBtn.textContent = "Buy Tariff Exposure Report — $7";
+        if (bulkBtn) bulkBtn.textContent = "Calculate & Buy PDF — $7";
+        if (note) note.textContent = "Reports are $7 each — or $30/month for unlimited with White-Label branding.";
+      }
+    } catch (e) {
+      /* best effort — buttons keep their default label */
+    }
+  }
+
   async function refreshSubscriptionUI(userId) {
     try {
       const { data: profile } = await supabaseClient
@@ -1695,6 +1742,7 @@
         renderMyReports(session.user.id);
         refreshSubscriptionUI(session.user.id);
         renderSkuMappings(session.user.id);
+        renderReportPricingStatus(session.user.id);
       }
     });
     // Initial paint, in case a session already exists in this browser.
@@ -1706,6 +1754,7 @@
         renderMyReports(data.session.user.id);
         refreshSubscriptionUI(data.session.user.id);
         renderSkuMappings(data.session.user.id);
+        renderReportPricingStatus(data.session.user.id);
       }
     });
   }
@@ -1730,14 +1779,17 @@
       if (statusEl) {
         statusEl.textContent =
           checkoutParam === "success"
-            ? "Payment received — thank you!"
+            ? "All set — thank you!"
             : "Checkout cancelled — no charge was made.";
       }
       window.history.replaceState({}, "", window.location.pathname);
       if (checkoutParam === "success") {
         setTimeout(() => {
           supabaseClient.auth.getSession().then(({ data }) => {
-            if (data.session) renderMyReports(data.session.user.id);
+            if (data.session) {
+              renderMyReports(data.session.user.id);
+              renderReportPricingStatus(data.session.user.id);
+            }
           });
         }, 4000);
       }
