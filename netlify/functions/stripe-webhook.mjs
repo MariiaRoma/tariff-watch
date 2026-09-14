@@ -340,8 +340,11 @@ async function buildBulkCalcReportPdf({ generatedAt, direction, oceanFreight, ro
 async function handleOneTimePayment(supabase, session) {
   const userId = session.client_reference_id;
   const product = session.metadata?.product || "unknown";
+  // A 100%-off coupon (free reports) makes Stripe skip creating a real
+  // PaymentIntent, since there's nothing to charge — fall back to the
+  // Checkout Session's own id, which always exists and is just as unique.
   const paymentIntentId =
-    typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+    (typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id) || session.id;
 
   if (!userId || !paymentIntentId) {
     // Nothing sensible to record — acknowledge so Stripe doesn't retry forever.

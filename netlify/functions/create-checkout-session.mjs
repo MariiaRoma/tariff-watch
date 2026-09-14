@@ -68,6 +68,32 @@ export default async (req) => {
     metadata.bulk_calc_id = refId;
   }
 
+  // Pricing: an active White-Label subscriber gets unlimited free
+  // reports; everyone else gets their first two reports free, then pays
+  // per report. Re-checked on every checkout (not cached), so a lapsed
+  // subscription or a used-up free allowance is always current.
+  const discounts = [];
+  if (product === "exposure_pdf" || product === "bulk_calc") {
+    const { data: profileRow } = await supabase
+      .from("profiles")
+      .select("subscription_status")
+      .eq("id", user.id)
+      .maybeSingle();
+    const isSubscriber = profileRow?.subscription_status === "active";
+
+    let freeReportEligible = isSubscriber;
+    if (!freeReportEligible) {
+      const { count } = await supabase
+        .from("report_purchases")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .in("report_type", ["exposure_pdf", "bulk_calc"]);
+      freeReportEligible = (count || 0) < 2;
+    }
+
+    if (freeReportEligible) discounts.push({ coupon: "free-report-100" });
+  }
+
   const stripe = new Stripe(STRIPE_SECRET_KEY);
   const origin = req.headers.get("origin") || new URL(req.url).origin;
   const mode = product === "white_label" ? "subscription" : "payment";
@@ -76,6 +102,7 @@ export default async (req) => {
     const session = await stripe.checkout.sessions.create({
       mode,
       line_items: [{ price: priceId, quantity: 1 }],
+      ...(discounts.length ? { discounts } : {}),
       // Ties the Stripe session to our own user id so the webhook knows
       // whose transaction/profile to update.
       client_reference_id: user.id,
