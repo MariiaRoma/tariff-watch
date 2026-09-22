@@ -5,8 +5,8 @@
  * layers live updates on top on every scheduled run.
  */
 
-const DATA_VERSION = "2026-09-21";
-const DATA_LAST_SYNCED = "September 21, 2026";
+const DATA_VERSION = "2026-09-22";
+const DATA_LAST_SYNCED = "September 22, 2026";
 
 const TARIFF_DATA = [
   {
